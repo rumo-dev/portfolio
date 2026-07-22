@@ -1,0 +1,213 @@
+---
+title: "技術解説：Depth of Field（被写界深度）"
+description: AMD GDC 2017「Cinematic Depth of Field」のFast Filter Spreading（散乱方式）をCompute Shaderで実装した被写界深度。
+sidebar:
+  order: 12
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import ModalVideo from "../../../components/ModalVideo.astro";
+import ImageGrid from "../../../components/ImageGrid.astro";
+import dummyImg from "../../../assets/dummy.jpg";
+
+AtmosFioreの **Depth of Field（被写界深度）** は、AMD GDC 2017「Cinematic Depth of Field」（Hillesland & Skelton）で紹介された **Fast Filter Spreading（FFS / 真の散乱方式）** をCompute Shaderで忠実に実装したものです。一般的なGatherベースのボケ近似とは異なり、各ピクセルが自身のCoC（Circle of Confusion）を周囲に「撒く」ことで、フィルタサイズに対してO(1)のコストで巨大なボケ表現を実現しています。
+
+---
+
+## 📐 DoFの基本概念
+
+薄レンズモデルに基づき、ピント面から外れた被写体ほど大きな錯乱円（CoC）を持ちます。従来のGather方式ではこのCoCの範囲を周囲からサンプリングして近似しますが、ボケ半径が大きいほどサンプル数が増えて破綻しやすいという弱点がありました。Fast Filter Spreadingはこれを逆転させ、「各ピクセルが自分のCoCを周辺に加算していく」Scatter方式によって、ボケ半径に依存しない一定コストを実現します。
+
+### 処理フロー
+
+```
+color_map + depth_map (GBuffer)
+    │
+[Pass 1] coc_generation_ps        → coc_map  (R=NearCoC G=FarCoC)
+    │
+[Pass 2] field_separation_*_ps    → near_field (premult α), far_field
+    │
+[Pass 3a] ffs_scatter_cs          → delta_buffer[near], delta_buffer[far]
+           各ピクセルがCoC矩形四隅にBartlettデルタをInterlockedAdd
+    │
+[Pass 3b] ffs_prefix_h_cs         → delta_buffer （水平プレフィックスサム）
+    │
+[Pass 3c] ffs_prefix_v_cs         → delta_buffer （垂直プレフィックスサム）
+    │
+[Pass 3d] ffs_resolve_cs          → blurred_near, blurred_far (float16 tex)
+           固定小数点 → float 変換 + 正規化
+    │
+[Pass 4] composite_ps             → dof_final
+```
+
+---
+
+## 🎥 デモ
+
+<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+
+<ImageGrid images={[dummyImg.src]} isComparison={true} />
+
+---
+
+## 💻 C++実装
+
+```cpp
+// DEPTH OF FIELD - Fast Filter Spreading (True Scatter / Compute Shader)
+// Based on: "Cinematic Depth of Field" GDC 2017 - Hillesland & Skelton (AMD)
+class DepthOfField
+{
+public:
+	DepthOfField(ID3D11Device* device, uint32_t width, uint32_t height);
+
+	void make(ID3D11DeviceContext* immediate_context, ID3D11ShaderResourceView* color_map);
+
+	ID3D11ShaderResourceView* GetColorMap() const { return dof_final->GetColorMap(); }
+
+public:
+	int  is_dof = 1;             ///< DoF有効フラグ（0 = オフ、オリジナルをそのまま出力）
+	bool half_resolution = true; ///< ハーフ解像度処理フラグ（内部バッファを1/2解像度にして高速化）
+
+private:
+	void CreateDeltaBuffer(ID3D11Device* device);
+
+	std::unique_ptr<FullscreenQuad> bit_block_transfer;
+
+	std::unique_ptr<Framebuffer> coc_map;      ///< R=NearCoC, G=FarCoC（フル解像度）
+	std::unique_ptr<Framebuffer> near_field;   ///< premultiplied α（ワーク解像度）
+	std::unique_ptr<Framebuffer> far_field;    ///< A=FarCoC（ワーク解像度）
+
+	/**
+	 * @brief FFS最終ブラー結果テクスチャ [0]=near, [1]=far
+	 * RWTexture2Dとしてffs_resolve_csが書き込み、composite_psがSRVとして読み込む。
+	 */
+	struct alignas(16) BlurredBuffer
+	{
+		Microsoft::WRL::ComPtr<ID3D11Texture2D>          texture;
+		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
+		Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav;
+	};
+	BlurredBuffer blurred[2]; ///< [0]=near, [1]=far
+
+	std::unique_ptr<Framebuffer> dof_final; ///< 最終出力（フル解像度）
+
+	// デルタバッファ（固定小数点Scatter用）[0]=near, [1]=far
+	struct DeltaBuffer
+	{
+		Microsoft::WRL::ComPtr<ID3D11Buffer>             buffer;
+		Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav;
+		uint32_t element_count = 0;
+	};
+	DeltaBuffer delta_buf[2];
+
+	Microsoft::WRL::ComPtr<ID3D11PixelShader> coc_generation_ps;
+	Microsoft::WRL::ComPtr<ID3D11PixelShader> field_separation_near_ps;
+	Microsoft::WRL::ComPtr<ID3D11PixelShader> field_separation_far_ps;
+	Microsoft::WRL::ComPtr<ID3D11PixelShader> composite_ps;
+
+	Microsoft::WRL::ComPtr<ID3D11ComputeShader> ffs_scatter_cs;   ///< Pass 3a
+	Microsoft::WRL::ComPtr<ID3D11ComputeShader> ffs_prefix_h_cs;  ///< Pass 3b
+	Microsoft::WRL::ComPtr<ID3D11ComputeShader> ffs_prefix_v_cs;  ///< Pass 3c
+	Microsoft::WRL::ComPtr<ID3D11ComputeShader> ffs_resolve_cs;   ///< Pass 3d
+
+	/**
+	 * @brief DoF固有の軽量定数バッファ（b9）
+	 * is_dofフラグとinv_bufferサイズのみ保持。
+	 * FNumber / FocalLength等はCAMERA_CONSTANT_BUFFER（b1）から直接参照。
+	 */
+	struct alignas(16) dof_local_constants
+	{
+		int   is_dof;
+		float inv_buffer_width;
+		float inv_buffer_height;
+		float padding;
+	};
+};
+```
+
+---
+
+## 💻 HLSL実装：CoC生成パス
+
+```hlsl
+// =============================================================
+// coc_generation_ps.hlsl
+// Pass 1: 深度バッファ → CoCマップ生成
+//
+// Input:
+//   t0 = color_map  （このパスでは未使用）
+//   t1 = depth_map  （非線形深度 [0,1]）
+// Output:
+//   R = Near CoC [0,1]  (0=フォーカス内, 1=最大ボケ)
+//   G = Far  CoC [0,1]
+//
+// CoC計算はdof_common.hlsliのComputeCoC()を使用。
+// 薄レンズモデルのパラメータはCAMERA_CONSTANT_BUFFER (b1) から参照:
+//   FNumber, FocalLength, SensorSize, FocusDist, MaxBlurRadius
+//   inv_projection（深度の線形化に使用）
+// =============================================================
+#include "dof_common.hlsli"
+
+Texture2D depth_map : register(t1);
+
+float4 main(VS_OUT pin) : SV_TARGET
+{
+    float raw_depth = depth_map.Sample(sampler_states[POINT_CLAMP], pin.texcoord).r;
+
+    // 1. 深度の線形化
+    float lin_depth = LinearizeDepth(raw_depth);
+
+    // 2. CoCの計算（薄レンズモデル、b1のFNumber/FocalLength/FocusDistを参照）
+    float2 coc = ComputeCoC(lin_depth);
+
+    return float4(coc.r, coc.g, 0.0f, 1.0f);
+}
+```
+
+Fast Filter Spreadingの核である `ffs_scatter_cs.hlsl` では、各ピクセルが自身のCoC矩形の四隅にBartlett（三角）フィルタの重みを `InterlockedAdd` で固定小数点バッファに加算し、続く水平・垂直プレフィックスサムパス（`ffs_prefix_h_cs` / `ffs_prefix_v_cs`）で矩形範囲の総和を高速に計算します。
+
+---
+
+## 🎨 処理の詳細
+
+### 1. Near / Farフィールドの分離合成
+
+被写体より手前（Near）と奥（Far）でボケの振る舞いが異なるため（Nearは前景がボケて背景を隠す「オクルージョン」が発生する）、`field_separation_near_ps` / `field_separation_far_ps` で2つのフィールドに分離してから個別にブラーし、最終合成パスで正しい前後関係を保って重ね合わせます。
+
+### 2. プレフィックスサムによる可変半径ブラー
+
+矩形領域の合計値をプレフィックスサム（累積和）で事前計算しておくことで、任意の矩形範囲の合計を4回の参照（Summed Area Table的手法）だけで取得でき、ボケ半径が変化してもサンプリングコストが一定に保たれます。
+
+### 3. ハーフ解像度処理による高速化
+
+`half_resolution = true` の場合、内部バッファをすべて1/2解像度で処理し、最終合成（`composite_ps`）のみをフル解像度で実行することで、視覚的な破綻を抑えつつ大幅な高速化を実現しています。
+
+---
+
+## 🔧 実装のポイント
+
+### 1. Compute Shaderによる真のScatter実装
+
+Pixel ShaderのGather近似とは異なり、Compute Shaderの `InterlockedAdd` を使うことで、各ピクセルが実際に周囲へ寄与を「撒く」正確なBartlettカーネルを実現しています。これによりフィルタサイズに対してO(1)のコストを達成しています。
+
+### 2. デルタバッファのサイズ管理
+
+```cpp
+// delta_bufferのサイズ:
+// (work_width + 2*MAX_R+2) * (work_height + 2*MAX_R+2) * 4 * sizeof(int)
+// MaxBlurRadiusを変更した場合はバッファを再生成すること
+```
+
+最大ボケ半径分のパディングを持たせたバッファサイズを確保する必要があり、`MaxBlurRadius` パラメータを変更する際はバッファの再生成が必須です。
+
+### 3. Feature Level要件
+
+Compute Shaderを使用するため、`D3D_FEATURE_LEVEL_11_0` 以上が必須です。
+
+<Aside type="note">
+  DoFのパラメータ（FNumber・FocalLength・SensorSize・FocusDist・MaxBlurRadius）はCamera_Constants（b1）から自動参照されるため、呼び出し前にカメラCBが正しくバインドされている必要があります。
+</Aside>
+
+<Aside type="caution">
+  入力SRVとUAVの同時バインドはDirectX 11の制約で禁止されています。各パスの間で明示的なアンバインドが必要です。
+</Aside>

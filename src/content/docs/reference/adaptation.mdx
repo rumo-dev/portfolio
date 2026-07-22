@@ -107,7 +107,7 @@ void main(uint3 DTid : SV_DispatchThreadID)
     float total_luminance = 0.0f;
     uint width, height;
     hdr_input.GetDimensions(width, height);
-    
+
     for (uint y = 0; y < height; y++)
     {
         for (uint x = 0; x < width; x++)
@@ -117,27 +117,27 @@ void main(uint3 DTid : SV_DispatchThreadID)
             total_luminance += luminance;
         }
     }
-    
+
     float avg_luminance = total_luminance / (width * height);
-    
+
     // 最小輝度でクランプ
     avg_luminance = max(avg_luminance, MIN_LUMINANCE);
-    
+
     // 目標露出値を計算
     float target_exposure = target_lum / avg_luminance;
-    
+
     // 前フレームの露出値を取得
     float current_exposure = exposure_output[uint2(0, 0)];
-    
+
     // 順応スピードを決定
     float speed = (target_exposure > current_exposure) ? speed_to_light : speed_to_dark;
-    
+
     // 露出値を更新（線形補間）
     float new_exposure = lerp(current_exposure, target_exposure, 1.0f - exp(-speed * delta_time));
-    
+
     // 露出値をクランプ
     new_exposure = clamp(new_exposure, MIN_EXPOSURE, MAX_EXPOSURE);
-    
+
     // 露出値を出力
     exposure_output[uint2(0, 0)] = new_exposure;
 }
@@ -155,13 +155,13 @@ float4 main(VS_OUT pin) : SV_TARGET
 {
     // HDR画像をサンプリング
     float4 hdr_color = hdr_input.Sample(sampler_state, pin.texcoord);
-    
+
     // 露出値を取得
     float exposure = exposure_map.Sample(sampler_state, float2(0.5f, 0.5f));
-    
+
     // 露出を適用
     float3 adapted_color = hdr_color.rgb * exposure;
-    
+
     return float4(adapted_color, hdr_color.a);
 }
 ```
@@ -221,11 +221,14 @@ float3 adapted_color = hdr_color.rgb * exposure;
 ## 📝 注意点
 
 <Aside type="note">
-  Adaptationはポストプロセス前提設計であり、Fullscreen Quad を使用してフルスクリーン描画を行います。
+  Adaptationはポストプロセス前提設計であり、Fullscreen Quad
+  を使用してフルスクリーン描画を行います。
 </Aside>
 
 <Aside type="note">
-  AdaptationはTone Mappingの前に適用することを想定しています。Adaptationで露出調整済みのHDRバッファをTone Mappingに入力します。
+  AdaptationはTone
+  Mappingの前に適用することを想定しています。Adaptationで露出調整済みのHDRバッファをTone
+  Mappingに入力します。
 </Aside>
 
 <Aside type="caution">

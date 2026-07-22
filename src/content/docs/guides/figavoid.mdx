@@ -1,22 +1,29 @@
----
-title: "チーム制作：FIGAVOID (Team Action)"
-description: 戦闘ロジックとエフェクト制御を担当。UniTaskを用いた非同期処理を導入した、3人開発による3Dアクションゲーム。
+title: "チーム制作：FIGAVOID (2D Roguelike)"
+description: プレイヤー、エネミーを担当。Githubflowを使用した3人開発による２Dローグライクゲーム。
 sidebar:
-  order: 4
+order: 4
+
 ---
 
-import { Badge } from '@astrojs/starlight/components';
+import { Badge } from "@astrojs/starlight/components";
+import ModalVideo from "../../../components/ModalVideo.astro";
 
 <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 2rem;">
   <Badge text="チーム開発" variant="success" size="medium" />
-  <Badge text="Unity" variant="note" size="medium" />
-  <Badge text="C#" variant="danger" size="medium" />
-  <Badge text="UniTask" variant="caution" size="medium" />
+  <Badge text="DirectX11" variant="note" size="medium" />
+  <Badge text="C++" variant="danger" size="medium" />
+  <Badge text="Github" variant="caution" size="medium" />
 </div>
 
 ## 作品概要
 
-スピード感溢れるバトルと激しい演出が特徴の、3人体制で開発した3Dアクションゲームです。私はメインプログラマーとして、ゲームのコアとなる戦闘ロジックおよび演出管理システムの実装を担当しました。
+敵にギリギリまで近づくことによるスリル感という面白さ、 ただ爆弾を使って敵を倒すだけでなく、いかに少ない爆弾でいかに効率よく敵を倒せるのか
+
+## デモ動画
+
+クリックすると拡大して再生されます。
+
+<ModalVideo videoId="RrdWjpoNi-s" title="FIGAVOID" />
 
 <table>
   <thead>
@@ -27,28 +34,40 @@ import { Badge } from '@astrojs/starlight/components';
   </thead>
   <tbody>
     <tr>
-      <td><strong>開発環境</strong></td>
-      <td>Unity 2022.3 / C# / UniTask</td>
+      <td>
+        <strong>開発環境</strong>
+      </td>
+      <td>DirectX11 / C++ / Github</td>
     </tr>
     <tr>
-      <td><strong>制作期間</strong></td>
-      <td>3ヶ月</td>
+      <td>
+        <strong>制作期間</strong>
+      </td>
+      <td>3週間</td>
     </tr>
     <tr>
-      <td><strong>制作人数</strong></td>
-      <td>3人 (プログラマー1人、プランナー1人、デザイナー1人)</td>
+      <td>
+        <strong>制作人数</strong>
+      </td>
+      <td>3人 (プログラマー3人)</td>
     </tr>
     <tr>
-      <td><strong>自分の役割</strong></td>
+      <td>
+        <strong>自分の役割</strong>
+      </td>
       <td>メインプログラマー</td>
     </tr>
     <tr>
-      <td><strong>担当パート</strong></td>
-      <td>戦闘シーケンス制御、ヒットストップ・エフェクト制御、UniTaskを用いた非同期演出管理</td>
+      <td>
+        <strong>担当パート</strong>
+      </td>
+      <td>Enemy・Playerの制御、タイトル、リザルト画面</td>
     </tr>
     <tr>
-      <td><strong>制作目標</strong></td>
-      <td>「手触りの良さ」と「小気味よいバトルテンポ」を完全に制御するプログラム設計</td>
+      <td>
+        <strong>テーマ</strong>
+      </td>
+      <td>ワンボタン</td>
     </tr>
   </tbody>
 </table>
@@ -58,15 +77,18 @@ import { Badge } from '@astrojs/starlight/components';
 ## 💡 技術的な拘り・実装のポイント
 
 ### 1. UniTaskによる軽量かつ制御しやすい非同期演出システム
+
 従来のコルーチンや `Update` でのタイマー管理を廃止し、**UniTask** を全面的に導入。
 敵のヒットストップ、カメラシェイク、時間差で発生する多段エフェクトなどをすべて非同期処理のタスクチェーンとして記述しました。
 これにより、ソースコードが上から下に流れる一本の流れとして記述でき、演出の順番変更やタイミングの微調整（ミリ秒単位）を非常に容易にしました。
 
 ### 2. イベント駆動型のアクション・リアクションロジック
+
 戦闘ロジックとエフェクト（音響・パーティクル・UI）の依存関係を疎結合にするため、**C#のイベント（Action/UnityEvent）**を活用したイベント駆動型システムを採用。
 プレイヤーが攻撃した瞬間、攻撃ヒット時、死亡時などのステート変化時にのみイベントが発火し、各演出コンポーネントが自立的に動作する設計にしました。これにより、プランナーからの「ヒット時の音を変更してほしい」「ヒットエフェクトを追加してほしい」といった要望に対し、戦闘コードを一切変更せずにアタッチするだけで対応可能にしました。
 
 ### 3. GitHub Flowによる効率的なアセット統合
+
 デザイナー・プランナーを含めた3人での円滑なコラボレーションを推進するため、**GitHub Flow** による運用を主導。
 プログラムのブランチ運用だけでなく、デザイナーが作ったアセットやプレハブを安全に取り込むための「プレハブ分割ルール」を設定し、コンフリクト（競合）を極限まで低減。プロジェクト全体のビルドエラーをゼロに保ちながら開発を完了しました。
 

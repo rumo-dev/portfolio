@@ -1,0 +1,237 @@
+---
+title: "技術解説：Chromatic Aberration（色収差）"
+description: 波長ごとの屈折率の違いによるRGBチャンネルのズレを再現する、物理ベース連動の色収差ポストエフェクト。
+sidebar:
+  order: 14
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import ModalVideo from "../../../components/ModalVideo.astro";
+import ImageGrid from "../../../components/ImageGrid.astro";
+import dummyImg from "../../../assets/dummy.jpg";
+
+現実のレンズでは波長によって屈折率が異なるため、RGBチャンネルが画面端に向かって放射状にズレる「横方向色収差」が発生します。AtmosFioreの **Chromatic Aberration** は、この現象をカメラの焦点距離・F値と連動させて物理的にもっともらしく再現します。
+
+---
+
+## 📐 Chromatic Aberrationの基本概念
+
+レンズの色収差は、広角（短焦点距離）ほど、また開放絞り（小さいF値）ほど強く現れる傾向があります。AtmosFioreはこの物理的傾向をシェーダー内で近似し、RGB各チャンネルのUVサンプリング位置を中心からの距離に応じてずらすことで色収差を表現します。
+
+### 物理ベース連動
+
+- **FocalLength**：広角（短焦点）ほど収差が大きい → `strength_from_focal_length()`
+- **FNumber**：開放絞りほど収差が大きい → `strength_from_fnumber()`
+- **intensity**：アーティストによる手動オフセット
+
+---
+
+## 🎥 デモ
+
+<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+
+<ImageGrid images={[dummyImg.src]} isComparison={true} />
+
+---
+
+## 💻 C++実装
+
+```cpp
+/**
+ * @brief 色収差（Chromatic Aberration）ポストエフェクトクラス
+ *
+ * @details
+ * 現実のレンズでは、波長によって屈折率が異なるため RGB チャンネルが
+ * 画面端に向かって放射状にズレる（横方向色収差）。
+ *
+ * 処理フロー：
+ *   HDR Input → [chromatic_aberration_ps] → HDR Output
+ */
+class ChromaticAberration
+{
+public:
+    ChromaticAberration(ID3D11Device* device, uint32_t width, uint32_t height);
+
+    void make(ID3D11DeviceContext* immediate_context, ID3D11ShaderResourceView* color_map);
+
+    ID3D11ShaderResourceView* GetColorMap() const { return ca_buffer->GetColorMap(); }
+
+    void DrawDebugUI();
+
+public:
+    bool  is_enabled    = true;  ///< 無効時はパススルー
+    float intensity     = 1.0f;  ///< アーティスト強度オフセット [0..3]
+    bool  physical_link = true;  ///< FocalLength / FNumberから自動算出するか
+
+private:
+    std::unique_ptr<FullscreenQuad> bit_block_transfer;
+    std::unique_ptr<Framebuffer>    ca_buffer;
+    Microsoft::WRL::ComPtr<ID3D11PixelShader> ca_ps;
+
+    /**
+     * shift_r / shift_b : UV空間でのチャンネルごとのオフセット倍率
+     *   正値で外側へ、負値で内側へシフト。
+     *   Rを外、Bを内（または逆）にすることで色フチを表現。
+     */
+    struct alignas(16) ChromaticAberrationConstants
+    {
+        float shift_r;      ///< Rチャンネル UVオフセット倍率
+        float shift_b;      ///< Bチャンネル UVオフセット倍率
+        int   is_enabled;
+        float pad;
+    };
+    Microsoft::WRL::ComPtr<ID3D11Buffer> constant_buffer;
+
+    // 焦点距離から収差強度を算出（12mm→2.0, 50mm→0.5, 200mm→0.1 程度）
+    static float strength_from_focal_length(float focal_length_mm);
+    // F値から収差強度を算出（f/1.4→1.5, f/5.6→0.5, f/16→0.2 程度）
+    static float strength_from_fnumber(float f_number);
+};
+```
+
+### 物理ベース強度計算
+
+```cpp
+// 焦点距離 [mm] → 収差強度
+// 広角（12mm）ほど大きく、望遠（200mm）ほど小さくなる。基準: 50mm → 1.0
+float ChromaticAberration::strength_from_focal_length(float focal_length_mm)
+{
+    if (focal_length_mm <= 0.0f) return 1.0f;
+    constexpr float reference = 50.0f;
+    float s = std::log(reference) / std::log(focal_length_mm);
+    return std::clamp(s, 0.1f, 2.5f);
+}
+
+// F値 → 収差強度
+// 開放（小さいF値）ほど収差が大きい。基準: f/2.8 → 1.0
+float ChromaticAberration::strength_from_fnumber(float f_number)
+{
+    if (f_number <= 0.0f) return 1.0f;
+    constexpr float reference = 2.8f;
+    float s = reference / f_number; // f/1.4 → 2.0, f/5.6 → 0.5
+    return std::clamp(s, 0.1f, 2.0f);
+}
+```
+
+```cpp
+void ChromaticAberration::make(ID3D11DeviceContext* immediate_context, ID3D11ShaderResourceView* color_map)
+{
+    // R を外側（+方向）、B を内側（-方向）にシフト → 典型的な色フチ
+    ChromaticAberrationConstants data{};
+    data.shift_r    =  0.002f * intensity;
+    data.shift_b    = -0.002f * intensity;
+    data.is_enabled = is_enabled ? 1 : 0;
+
+    immediate_context->UpdateSubresource(constant_buffer.Get(), 0, 0, &data, 0, 0);
+    immediate_context->PSSetConstantBuffers(9, 1, constant_buffer.GetAddressOf());
+
+    ca_buffer->Activate(immediate_context);
+    bit_block_transfer->Blit(immediate_context, &color_map, 0, 1, ca_ps.Get());
+    ca_buffer->Deactivate(immediate_context);
+}
+```
+
+---
+
+## 💻 HLSL実装
+
+```hlsl
+// chromatic_aberration_ps.hlsl
+//
+// RGBチャンネルをUV中心から放射状に異なる量だけオフセットすることで、
+// レンズ端での波長分散（横方向色収差）を再現する。
+//
+// 物理連動:
+//   Camera_Constants (b1) の FocalLength / FNumber を参照して
+//   シフト量を自動スケーリング。
+
+#include "constants.hlsli"
+#include "samplers.hlsli"
+
+cbuffer ChromaticAberrationConstants : register(b9)
+{
+    float shift_r;
+    float shift_b;
+    int   is_enabled;
+    float ca_pad;
+};
+
+Texture2D color_map : register(t0);
+
+// focal_scale : 広角（短焦点）ほど大きい。基準 50mm → 1.0
+float focal_scale(float focal_length_mm)
+{
+    float s = log(50.0f) / max(log(max(focal_length_mm, 1.0f)), 0.001f);
+    return clamp(s, 0.1f, 2.5f);
+}
+
+// fnum_scale : 開放（小さいF値）ほど大きい。基準 f/2.8 → 1.0
+float fnum_scale(float f_number)
+{
+    return clamp(2.8f / max(f_number, 0.1f), 0.1f, 2.0f);
+}
+
+float4 main(VS_OUT pin) : SV_TARGET
+{
+    float2 uv = pin.texcoord;
+    if (!is_enabled)
+        return color_map.Sample(sampler_states[LINEAR_CLAMP], uv);
+
+    // UV中心 (0.5, 0.5) からの方向ベクトル
+    float2 dir = uv - float2(0.5f, 0.5f);
+
+    // 半径の二乗で端に集中させる（実際のレンズ収差は半径の2〜3乗に比例）
+    float dist = length(dir);
+    float radial = dist * dist;
+
+    // 物理スケール（Camera_Constants b1のFocalLength / FNumberを参照）
+    float phys_scale = focal_scale(FocalLength) * fnum_scale(FNumber);
+
+    float2 offset_r = dir * (shift_r * radial * phys_scale);
+    float2 offset_b = dir * (shift_b * radial * phys_scale);
+    // Gチャンネルはオフセットなし（基準波長）
+
+    float r = color_map.Sample(sampler_states[LINEAR_CLAMP], uv + offset_r).r;
+    float g = color_map.Sample(sampler_states[LINEAR_CLAMP], uv             ).g;
+    float b = color_map.Sample(sampler_states[LINEAR_CLAMP], uv + offset_b  ).b;
+    float a = color_map.Sample(sampler_states[LINEAR_CLAMP], uv             ).a;
+
+    return float4(r, g, b, a);
+}
+```
+
+---
+
+## 🎨 処理の詳細
+
+### 1. 半径の2乗による端集中
+
+`radial = dist * dist` により、画面中心付近ではほぼ収差が発生せず、端に近づくにつれて急激にオフセット量が増加します。これは実際のレンズ収差が半径のべき乗に比例するという物理特性の簡易近似です。
+
+### 2. Rを外側・Bを内側にずらす非対称シフト
+
+`shift_r` を正、`shift_b` を負に設定することで、赤チャンネルは外側に、青チャンネルは内側にサンプリング位置がずれ、Gチャンネルを基準とした典型的な色フチ（赤〜シアンの縁取り）を再現します。
+
+### 3. FocalLengthとFNumberの掛け合わせ
+
+`phys_scale = focal_scale(FocalLength) * fnum_scale(FNumber)` により、広角かつ開放絞りという「収差が最も強く出る条件」が重なったときに最大の強度になるよう設計されています。
+
+---
+
+## 🔧 実装のポイント
+
+### 1. CPU側とGPU側の役割分担
+
+CPU側（C++）は `intensity` によるアーティストスケールのみを定数バッファに積み、実際の物理スケーリング（FocalLength / FNumberへの連動）はシェーダー内で完結させることで、シェーダーの単純さを保っています。
+
+### 2. Physical Linkによるモード切り替え
+
+`physical_link` フラグ（GUI上の「Physical Link」チェックボックス）により、物理連動を有効にするか、`intensity` のみのシンプルなアーティスト制御にするかを切り替え可能です。
+
+<Aside type="note">
+  出力はR16G16B16A16_FLOATの線形HDRです。Camera_Constants（b1）を参照するため、事前にカメラ定数バッファのバインドが必要です。
+</Aside>
+
+<Aside type="caution">
+  収差量が大きすぎるとエッジのちらつき（アーティファクト）が目立ちやすくなるため、`intensity`は[0..3]程度の範囲での調整を推奨します。
+</Aside>

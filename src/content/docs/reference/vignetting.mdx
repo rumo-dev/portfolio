@@ -1,0 +1,224 @@
+---
+title: "技術解説：Vignetting（周辺減光）"
+description: cos^4則による物理モデルとアーティストカーブの2モードを切り替え可能な、周辺減光ポストエフェクト。
+sidebar:
+  order: 16
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import ModalVideo from "../../../components/ModalVideo.astro";
+import ImageGrid from "../../../components/ImageGrid.astro";
+import dummyImg from "../../../assets/dummy.jpg";
+
+現実のレンズでは、斜め方向から入射する光がレンズの縁に遮られたり、cos^4則による光量減衰によって画面四隅が暗くなる現象が起こります。AtmosFioreの **Vignetting** は、この周辺減光を「物理モデル」と「アーティストカーブ」の2モードで再現できるポストエフェクトです。
+
+---
+
+## 📐 Vignettingの基本概念
+
+本実装は以下の2モードを切り替えられます。
+
+1. **解析モデル：cos^4(θ)近似** — 物理的に正確。FNumber / FocalLengthとの連動で減光量が変わる
+2. **アーティストカーブ：smooth-stepベースのグラデーション** — 直感的に調整しやすい
+
+### 物理ベース連動
+
+- **FNumber**：開放絞り（小さいF値）ほど周辺減光が強い
+- **FocalLength**：広角（短焦点）ほど周辺減光が強い
+
+---
+
+## 🎥 デモ
+
+<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+
+<ImageGrid images={[dummyImg.src]} isComparison={true} />
+
+---
+
+## 💻 C++実装
+
+```cpp
+class Vignetting
+{
+public:
+    Vignetting(ID3D11Device* device, uint32_t width, uint32_t height);
+
+    void make(ID3D11DeviceContext* immediate_context, ID3D11ShaderResourceView* color_map);
+
+    ID3D11ShaderResourceView* GetColorMap() const { return vignette_buffer->GetColorMap(); }
+
+    void DrawDebugUI();
+
+public:
+    bool  is_enabled    = true;   ///< 無効時はパススルー
+    bool  physical_link = true;   ///< FNumber / FocalLengthから自動算出するか
+    float intensity     = 1.0f;   ///< アーティスト強度スケール [0..3]
+    float inner_radius  = 0.35f;  ///< 減光が始まる半径（正規化、0..1）
+    float outer_radius  = 0.75f;  ///< 完全減光の半径（正規化、0..1）
+    float smoothness    = 2.0f;   ///< smooth-step指数（大きいほど急峻）
+
+private:
+    std::unique_ptr<FullscreenQuad> bit_block_transfer;
+    std::unique_ptr<Framebuffer>    vignette_buffer;
+    Microsoft::WRL::ComPtr<ID3D11PixelShader> vignette_ps;
+
+    struct alignas(16) VignettingConstants
+    {
+        float intensity;
+        float inner_radius;
+        float outer_radius;
+        float smoothness;
+        int   is_enabled;
+        int   physical_link;
+        float pad[2];
+    };
+    Microsoft::WRL::ComPtr<ID3D11Buffer> constant_buffer;
+};
+```
+
+```cpp
+void Vignetting::make(ID3D11DeviceContext* immediate_context, ID3D11ShaderResourceView* color_map)
+{
+	VignettingConstants data{};
+	data.intensity     = intensity;
+	data.inner_radius  = inner_radius;
+	data.outer_radius  = outer_radius;
+	data.smoothness    = smoothness;
+	data.is_enabled    = is_enabled ? 1 : 0;
+	data.physical_link = physical_link ? 1 : 0;
+
+	immediate_context->UpdateSubresource(constant_buffer.Get(), 0, 0, &data, 0, 0);
+	immediate_context->PSSetConstantBuffers(9, 1, constant_buffer.GetAddressOf());
+
+	vignette_buffer->Activate(immediate_context);
+	bit_block_transfer->Blit(immediate_context, &color_map, 0, 1, vignette_ps.Get());
+	vignette_buffer->Deactivate(immediate_context);
+}
+```
+
+---
+
+## 💻 HLSL実装
+
+```hlsl
+// vignetting_ps.hlsl
+//
+// レンズのcos^4則および入射角制限による四隅の光量減衰を再現する。
+// 2モードを組み合わせて使用：
+//   1. 物理モデル（physical_link == 1）
+//      Camera_Constants (b1) のFNumber / FocalLengthから減光量を算出。
+//   2. アーティストカーブ（physical_link == 0）
+//      inner_radius / outer_radius / smoothnessを使ったグラデーション。
+
+#include "constants.hlsli"
+#include "samplers.hlsli"
+
+cbuffer VignettingConstants : register(b9)
+{
+    float intensity;
+    float inner_radius;
+    float outer_radius;
+    float smoothness;
+    int   is_enabled;
+    int   physical_link;
+    float vig_pad0;
+    float vig_pad1;
+};
+
+Texture2D color_map : register(t0);
+
+// 物理モデル: cos^4則 + FNumber/FocalLengthによるスケーリング
+float compute_physical_vignette(float r_normalized)
+{
+    float half_fov = fov * 0.5f;
+    float theta = r_normalized * half_fov;
+
+    float cos_theta = cos(theta);
+    float cos4 = cos_theta * cos_theta * cos_theta * cos_theta;
+
+    // FNumberが小さい（開放）ほど強い、基準f/2.8 → scale 1.0
+    // FocalLengthが小さい（広角）ほど強い、基準50mm → scale 1.0
+    float fnum_scale    = clamp(2.8f  / max(FNumber,    0.1f), 0.1f, 2.5f);
+    float focal_scale   = clamp(log(50.0f) / log(max(FocalLength, 1.0f)), 0.1f, 2.5f);
+    float phys_strength = saturate(fnum_scale * focal_scale * 0.5f);
+
+    return lerp(1.0f, cos4, phys_strength);
+}
+
+// アーティストカーブモデル: smooth-stepを指数で整形したグラデーション
+float compute_artist_vignette(float r_normalized)
+{
+    float t = saturate((r_normalized - inner_radius) / max(outer_radius - inner_radius, 0.0001f));
+    float smooth = t * t * (3.0f - 2.0f * t); // cubic smoothstep
+    return 1.0f - pow(smooth, smoothness * 0.5f);
+}
+
+float4 main(VS_OUT pin) : SV_TARGET
+{
+    float2 uv = pin.texcoord;
+    float4 color = color_map.Sample(sampler_states[LINEAR_CLAMP], uv);
+    if (!is_enabled)
+        return color;
+
+    // 中心からの正規化距離（16:9前提の簡易aspect補正）
+    float2 p = uv - float2(0.5f, 0.5f);
+    p.x *= (16.0f / 9.0f);
+    float r = length(p) * 1.41421f; // 角で1.0になるよう正規化
+
+    float vignette = physical_link
+        ? compute_physical_vignette(r)
+        : compute_artist_vignette(r);
+
+    // intensityでスケール（1.0が通常、0.0で効果なし、1.0超で過剰な減光）
+    vignette = lerp(1.0f, vignette, intensity);
+
+    return float4(color.rgb * vignette, color.a);
+}
+```
+
+---
+
+## 🎨 処理の詳細
+
+### 1. cos^4則による物理モデル
+
+レンズの周辺減光を支配する物理法則の一つがcos^4則で、入射角θに対して `cos^4(θ)` で光量が減衰します。画面端ほどθが大きくなるため、自然な減光カーブが得られます。
+
+### 2. アスペクト比補正による真円状の減光
+
+16:9などの横長画面でも減光が楕円ではなく真円状に見えるよう、`p.x *= (16.0f / 9.0f)` でX成分をあらかじめ補正してから距離を計算しています。
+
+### 3. 2モードの重み付け合成ではなく排他選択
+
+物理モデルとアーティストカーブは `physical_link` フラグによって完全に排他的に選択され、どちらの場合も最終的に `intensity` でブレンド量を調整します。
+
+---
+
+## 🔧 実装のポイント
+
+### 1. GUI上でのモード別パラメータ表示
+
+```cpp
+CustomUI::Checkbox("Physical Link (FNumber / FocalLength)", &physical_link);
+if (!physical_link)
+{
+	CustomUI::SliderFloat("Inner Radius", &inner_radius, 0.0f, 1.0f, "%.2f");
+	CustomUI::SliderFloat("Outer Radius", &outer_radius, 0.0f, 1.5f, "%.2f");
+	CustomUI::SliderFloat("Smoothness", &smoothness, 0.5f, 6.0f, "%.1f");
+}
+```
+
+`physical_link` が有効な間は `inner_radius` / `outer_radius` / `smoothness` の調整GUIを隠すことで、UIの複雑化を防いでいます。
+
+### 2. Chromatic Aberration・Lens Distortionとの統一設計
+
+Vignettingは他のレンズ系エフェクト（Chromatic Aberration・Lens Distortion）と同じ「物理値による自動算出＋アーティストオフセット」という設計パターンを共有しており、レンズエフェクト群全体で一貫した操作感を実現しています。
+
+<Aside type="note">
+  出力はR16G16B16A16_FLOATの線形HDRです。Camera_Constants（b1）を参照するため、事前にカメラ定数バッファのバインドが必要です。
+</Aside>
+
+<Aside type="caution">
+  `intensity`を1.0より大きくすると過剰な減光（シネマティック表現）になりますが、行き過ぎると画面端の視認性が損なわれるため注意が必要です。
+</Aside>

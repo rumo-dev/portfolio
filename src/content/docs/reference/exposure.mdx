@@ -1,0 +1,182 @@
+---
+title: "技術解説：Exposure（T値ベース露出）"
+description: T値・シャッタースピード・ISOから物理的なEV100を算出し、HDRバッファに線形露出スケールを適用するポストエフェクト。
+sidebar:
+  order: 13
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import ModalVideo from "../../../components/ModalVideo.astro";
+import ImageGrid from "../../../components/ImageGrid.astro";
+import dummyImg from "../../../assets/dummy.jpg";
+
+実カメラの露出計算を再現するため、AtmosFioreでは **Exposure（T値ベース露出）** を実装しています。写真撮影で使われるT値・シャッタースピード・ISO感度から標準的な **EV100** を算出し、シーンのHDRカラーに線形な露出スケールを適用する、トーンマッピングとは独立した単独ポストエフェクトです。
+
+---
+
+## 📐 Exposureの基本概念
+
+カメラの露出は、絞り（T値）・シャッタースピード・ISO感度という3つのパラメータで決まります。これらを写真業界標準の指標である **EV100**（ISO100基準の露出値）に変換し、そこから線形露出スケールを導出します。
+
+### 処理フロー
+
+1. **T値・シャッタースピード・ISOからEV100を計算**
+2. **EV補正値（EV_Compensation）を加算**
+3. **EV100を線形露出スケールに変換**
+4. **HDRカラーにスケールを乗算**（トーンマップ・sRGB変換は行わず後段に委譲）
+
+---
+
+## 🎥 デモ
+
+<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+
+<ImageGrid images={[dummyImg.src]} isComparison={true} />
+
+---
+
+## 💻 C++実装
+
+```cpp
+/**
+ * @brief T値ベース露出ポストエフェクトクラス
+ *
+ * @details
+ * T値 / シャッタースピード / ISO から EV100 を計算し、
+ * HDRバッファに線形露出スケールを適用する単独ポストエフェクト。
+ * トーンマップ・sRGB変換は行わない（後段に委譲）。
+ *
+ * 処理フロー：
+ *   HDR Input → [exposure_ps] → HDR Output (露出適用済み)
+ *
+ * @note
+ * ・出力は依然 R16G16B16A16_FLOAT の線形HDR
+ * ・Bloomの前段・後段どちらにも挿入可能
+ * ・b1のCamera_Constantsを参照するため追加の定数バッファ不要
+ */
+class Exposure
+{
+public:
+	Exposure(ID3D11Device* device, uint32_t width, uint32_t height);
+
+	void make(ID3D11DeviceContext* immediate_context, ID3D11ShaderResourceView* color_map);
+
+	ID3D11ShaderResourceView* GetColorMap() const { return exposure_buffer->GetColorMap(); }
+
+	void DrawDebugUI();
+
+public:
+	bool  is_enabled = true; ///< 無効時はパススルー
+
+private:
+	std::unique_ptr<FullscreenQuad> bit_block_transfer;
+	std::unique_ptr<Framebuffer>    exposure_buffer;
+
+	Microsoft::WRL::ComPtr<ID3D11PixelShader> exposure_ps;
+
+	struct alignas(16) ExposureConstants
+	{
+		int   is_enabled;
+		float pad[3];
+	};
+	Microsoft::WRL::ComPtr<ID3D11Buffer> constant_buffer;
+};
+```
+
+---
+
+## 💻 HLSL実装
+
+```hlsl
+#include "constants.hlsli"
+#include "samplers.hlsli"
+#include "fullscreen_quad.hlsli"
+
+cbuffer ExposureConstants : register(b9)
+{
+    int IsEnabled;
+    float3 pad;
+}
+
+Texture2D ColorMap : register(t0);
+
+//----------------------------------------------------------
+// T値 → EV100
+//   EV100 = log2( T² / shutterSpeed ) - log2( ISO / 100 )
+//----------------------------------------------------------
+float ComputeEV100(float tStop, float shutterSpeed, float iso)
+{
+    return log2((tStop * tStop) / max(shutterSpeed, 1e-6f))
+         - log2(max(iso, 1.0f) / 100.0f);
+}
+
+//----------------------------------------------------------
+// EV100 → 線形露出スケール
+//   L_max = 1.2 * 2^EV100  (ACES基準18%グレー)
+//   exposure = 1 / L_max
+//----------------------------------------------------------
+float EV100ToExposure(float ev100)
+{
+    return 1.0f / (1.2f * exp2(ev100));
+}
+
+float4 main(VS_OUT pin) : SV_TARGET
+{
+    float3 hdr = ColorMap.Sample(sampler_states[POINT_CLAMP], pin.texcoord).rgb;
+
+    [branch]
+    if (!IsEnabled)
+        return float4(hdr, 1.0f); // パススルー
+
+    float ev100 = ComputeEV100(TStop, ShutterSpeed, ISO);
+    ev100 += EV_Compensation;
+    float exposure = EV100ToExposure(ev100);
+
+    // 線形スケールのみ適用。出力は依然HDR。
+    return float4(hdr * exposure, 1.0f);
+}
+```
+
+---
+
+## 🎨 処理の詳細
+
+### 1. T値とF値の違い
+
+一般的なF値（絞り値）はレンズの透過率を考慮しない理論値ですが、T値（Transmission stop）は実際の光の透過率を反映した実用値です。AtmosFioreはCamera_Constants（b1）にT値ベースのパラメータを保持し、より写真的に正確な露出計算を行います。
+
+### 2. EV100という共通指標
+
+シャッタースピード・絞り・ISOという3変数を、ISO100基準の単一指標EV100に集約することで、「どの組み合わせでも同じ明るさになる」露出をシンプルな1次元パラメータとして扱えます。
+
+```hlsl
+EV100 = log2(T² / shutterSpeed) - log2(ISO / 100)
+```
+
+### 3. 18%グレー基準のスケール変換
+
+`L_max = 1.2 * 2^EV100` は、EV100から「シーン内で白として扱う最大輝度」を求める標準的な近似式です。この逆数を線形HDRカラーに乗算することで、写真的に適正な露出を再現します。
+
+---
+
+## 🔧 実装のポイント
+
+### 1. トーンマッピングとの責務分離
+
+Exposureはあくまで線形HDR空間でのスケーリングのみを担当し、非線形圧縮（トーンマッピング）やガンマ補正は一切行いません。これにより、Tone Mapping側のアルゴリズムを自由に切り替えても露出計算のロジックに影響が出ない設計になっています。
+
+### 2. パイプライン上の柔軟な配置
+
+コメントにもある通り、Exposureは「Bloomの前段・後段どちらにも挿入可能」な設計です。AtmosFioreでは被写界深度の直後・Bloomより前段に配置し、以降のレンズ系エフェクト（色収差・歪曲・周辺減光・Bloom）すべてが露出済みの明るさに対して作用するようにしています。
+
+### 3. 追加の定数バッファが不要な設計
+
+T値・シャッタースピード・ISOといったカメラパラメータはすべてCamera_Constants（b1）から参照するため、Exposure専用の定数バッファは有効フラグのみを保持する最小限の構造になっています。
+
+<Aside type="note">
+  Camera_Constants（b1）が事前にバインドされている前提で動作します。結果は`GetColorMap()`で取得できます。
+</Aside>
+
+<Aside type="caution">
+  出力は依然として線形HDR（R16G16B16A16_FLOAT）です。sRGBやガンマ補正はTone Mapping段で行われるため、Exposure単体の出力をそのままディスプレイに表示すると露出過多に見えることがあります。
+</Aside>

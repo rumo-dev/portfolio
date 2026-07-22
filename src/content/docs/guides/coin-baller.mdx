@@ -5,12 +5,72 @@ sidebar:
   order: 3
 ---
 
+import { Badge } from "@astrojs/starlight/components";
+import ModalVideo from "../../../components/ModalVideo.astro";
+
+<div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 2rem;">
+  <Badge text="チーム開発" variant="success" size="medium" />
+  <Badge text="DirectX11" variant="note" size="medium" />
+  <Badge text="C++" variant="danger" size="medium" />
+  <Badge text="Github" variant="caution" size="medium" />
+</div>
+
 ## 作品概要
 
-- **ジャンル:** 3Dローグライク・ピンボールアクション
-- **開発規模:** チーム開発（プログラマーグループで共同開発）
-- **担当パート:** メイン物理挙動実装、ゲーム仕様書策定、システム基盤
-- **開発環境:** C++ / 自作3Dエンジン（DirectX 11ベース）
+スマートボールとピンボールの要素を融合した、3Dローグライクゲーム
+
+## デモ動画
+
+クリックすると拡大して再生されます。
+
+<ModalVideo videoId="eAyFPevaKRA" title="Coin　Baller" />
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 30%">項目</th>
+      <th>内容</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>
+        <strong>開発環境</strong>
+      </td>
+      <td>DirectX11 / C++ / Github</td>
+    </tr>
+    <tr>
+      <td>
+        <strong>制作期間</strong>
+      </td>
+      <td>38日間</td>
+    </tr>
+    <tr>
+      <td>
+        <strong>制作人数</strong>
+      </td>
+      <td>3人 (プログラマー4人)</td>
+    </tr>
+    <tr>
+      <td>
+        <strong>自分の役割</strong>
+      </td>
+      <td>シェーダープログラマー</td>
+    </tr>
+    <tr>
+      <td>
+        <strong>担当パート</strong>
+      </td>
+      <td>ポストエフェクトなど</td>
+    </tr>
+    <tr>
+      <td>
+        <strong>テーマ</strong>
+      </td>
+      <td>自由</td>
+    </tr>
+  </tbody>
+</table>
 
 ---
 

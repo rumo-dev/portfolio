@@ -1,0 +1,183 @@
+---
+title: "技術解説：Lens Distortion（レンズ歪曲）"
+description: ブラウン–コンラディモデルのk1項による樽型・糸巻き型歪みを再現する、FoV連動のレンズ歪曲ポストエフェクト。
+sidebar:
+  order: 15
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import ModalVideo from "../../../components/ModalVideo.astro";
+import ImageGrid from "../../../components/ImageGrid.astro";
+import dummyImg from "../../../assets/dummy.jpg";
+
+広角レンズ特有の樽型（barrel）歪みや、望遠レンズの糸巻き型（pincushion）歪みを再現するため、AtmosFioreでは **Lens Distortion** を実装しています。カメラ較正で広く使われる **ブラウン–コンラディモデル** の主歪曲係数（k1）を用い、視野角（FoV）と連動して自動的に歪み量を調整します。
+
+---
+
+## 📐 Lens Distortionの基本概念
+
+ブラウン–コンラディモデルでは、歪み後の半径 `r_d` を歪み前の半径 `r_u` の多項式として次のように表します。
+
+```
+r_d = r_u * (1 + k1 * r_u^2)
+```
+
+- **k1 > 0** → 樽型（barrel）歪み：広角レンズに典型的
+- **k1 < 0** → 糸巻き型（pincushion）歪み：望遠レンズに典型的
+
+---
+
+## 🎥 デモ
+
+<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+
+<ImageGrid images={[dummyImg.src]} isComparison={true} />
+
+---
+
+## 💻 C++実装
+
+```cpp
+/**
+ * @brief レンズ歪曲（Lens Distortion / 歪曲収差）ポストエフェクトクラス
+ *
+ * @details
+ * ブラウン–コンラディモデルのk1項（主歪曲係数）による
+ * 樽型（barrel）／糸巻き型（pincushion）歪みを再現する。
+ *
+ * 物理ベース連動：
+ *   - FocalLength (fov) : 広角（短焦点）ほど樽型歪みが大きい
+ *     → distortion_k1_from_fov() でFoVからk1基準値を算出
+ *   - distortion_scale   : アーティスト手動オフセット（正→樽型, 負→糸巻き型）
+ */
+class LensDistortion
+{
+public:
+    LensDistortion(ID3D11Device* device, uint32_t width, uint32_t height);
+
+    void make(ID3D11DeviceContext* immediate_context, ID3D11ShaderResourceView* color_map);
+
+    ID3D11ShaderResourceView* GetColorMap() const { return distortion_buffer->GetColorMap(); }
+
+    void DrawDebugUI();
+
+public:
+    bool  is_enabled       = true;  ///< 無効時はパススルー
+    float distortion_scale = 1.0f;  ///< アーティスト強度スケール（正→樽型, 負→糸巻き型）
+    bool  physical_link    = true;  ///< FoV（FocalLength）から自動算出するか
+
+private:
+    std::unique_ptr<FullscreenQuad> bit_block_transfer;
+    std::unique_ptr<Framebuffer>    distortion_buffer;
+    Microsoft::WRL::ComPtr<ID3D11PixelShader> distortion_ps;
+
+    struct alignas(16) LensDistortionConstants
+    {
+        float k1;           ///< 主歪曲係数
+        int   is_enabled;
+        float pad[2];
+    };
+    Microsoft::WRL::ComPtr<ID3D11Buffer> constant_buffer;
+
+    // FoV [radian] からk1基準値を算出（0.0 〜 0.5程度）
+    static float distortion_k1_from_fov(float fov_rad);
+};
+```
+
+---
+
+## 💻 HLSL実装
+
+```hlsl
+// lens_distortion_ps.hlsl
+//
+// ブラウン–コンラディモデルのk1項による放射状歪みを適用する。
+//   r_d = r_u * (1 + k1 * r_u^2)
+//   k1 > 0 → 樽型（barrel）  : 広角レンズに典型
+//   k1 < 0 → 糸巻き型（pincushion）: 望遠レンズに典型
+//
+// 物理連動:
+//   Camera_Constants (b1) の fov を参照してk1を自動算出（physical_link時）。
+//   k1 == 0.0の場合はシェーダ内でfovベース計算に切り替わる。
+//
+// 範囲外UVはBORDER BLACKサンプラーで黒クランプ。
+
+#include "constants.hlsli"
+#include "samplers.hlsli"
+
+cbuffer LensDistortionConstants : register(b9)
+{
+    float k1;           // 主歪曲係数（0ならシェーダ内でfovから算出）
+    int   is_enabled;
+    float ld_pad0;
+    float ld_pad1;
+};
+
+Texture2D color_map : register(t0);
+
+// FoV [radian] → k1基準値。fov_reference = 45°(0.785 rad) を基準とする
+float k1_from_fov(float fov_rad)
+{
+    float excess = fov_rad - 0.785398f; // 45°からの超過量
+    return clamp(excess * 0.20f, -0.5f, 0.5f);
+}
+
+float4 main(VS_OUT pin) : SV_TARGET
+{
+    float2 uv = pin.texcoord;
+    if (!is_enabled)
+        return color_map.Sample(sampler_states[LINEAR_CLAMP], uv);
+
+    // CPUから0.0が渡された場合 → fovベースで自動計算（physical_linkモード）
+    float effective_k1 = (k1 == 0.0f) ? k1_from_fov(fov) : k1;
+
+    // UVを中心(0,0)基準の正規化座標に変換
+    float2 p = uv - float2(0.5f, 0.5f);
+    float r2 = dot(p, p); // |p|^2
+
+    // ブラウン–コンラディ: r_d = r_u * (1 + k1 * r_u^2)
+    float scale = 1.0f + effective_k1 * r2;
+
+    // 歪み後のUV（中心座標系 → [0,1]に戻す）
+    float2 distorted_uv = p * scale + float2(0.5f, 0.5f);
+
+    // 範囲外はBORDER BLACK（s7）でクランプ → 黒になる
+    return color_map.Sample(sampler_states[LINEAR_BORDER_OPAQUE_BLACK], distorted_uv);
+}
+```
+
+---
+
+## 🎨 処理の詳細
+
+### 1. FoVからのk1自動導出
+
+`k1_from_fov()` は、45°を基準として実際の水平画角がそれより広ければ樽型（k1が正）、狭ければ糸巻き型（k1が負）に近づくよう線形近似しています。広角レンズを使うほど自動的に強い樽型歪みが得られるため、カメラの画角を変えるだけで違和感のない歪みが自動追従します。
+
+### 2. 中心からの正規化座標系での計算
+
+UV座標を `[0, 1]` から中心 `(0, 0)` 基準の座標系に変換してから歪み計算を行うことで、画面中心を基準とした対称な歪みを実現しています。
+
+### 3. 範囲外サンプリングの黒クランプ
+
+樽型歪みでは画面端が内側に引き込まれ、逆に糸巻き型歪みでは範囲外を参照する箇所が生まれます。`LINEAR_BORDER_OPAQUE_BLACK` サンプラーを使うことで、範囲外は不透明な黒として扱われ、不自然な引き伸ばしを防いでいます。
+
+---
+
+## 🔧 実装のポイント
+
+### 1. Physical Linkモードとアーティストモードの両立
+
+`k1 == 0.0` をシェーダー内での「自動計算に切り替える」というシグナルとして利用することで、CPU側から明示的なk1を渡す（アーティスト指定）か、0を渡してFoV連動に任せるかをシームレスに切り替えられる設計になっています。
+
+### 2. Chromatic Aberration・Vignettingとの共通パイプライン位置
+
+Lens Distortionはパイプライン上、Chromatic Aberrationの直後・Vignettingの直前に配置されます。これらはすべて「レンズそのものに起因する光学収差」として一括りにまとめられており、Bloomより前段で処理されます。
+
+<Aside type="note">
+  出力はR16G16B16A16_FLOATの線形HDRです。歪みでサンプル範囲外となる画素は黒でクランプされます。
+</Aside>
+
+<Aside type="caution">
+  k1の絶対値が大きすぎると画面端の情報が大きく失われるため、通常は[-0.5, 0.5]程度の範囲での調整を推奨します。
+</Aside>

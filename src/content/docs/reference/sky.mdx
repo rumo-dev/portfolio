@@ -1,0 +1,260 @@
+---
+title: "技術解説：Sky（大気散乱・プロシージャルスカイ）"
+description: レイマーチングによる大気散乱シミュレーションと、雲・星・オーロラをプロシージャルに合成するスカイレンダリング。
+sidebar:
+  order: 17
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import ModalVideo from "../../../components/ModalVideo.astro";
+import ImageGrid from "../../../components/ImageGrid.astro";
+import dummyImg from "../../../assets/dummy.jpg";
+
+窓の外に広がる空を描くため、AtmosFioreでは **Sky** をポストエフェクトとして実装しています。テクスチャに頼らず、レイリー散乱・ミー散乱に基づく大気散乱シミュレーション、FBMノイズによる雲、そしてプロシージャルな星・オーロラをすべてシェーダー内でリアルタイム生成します。
+
+---
+
+## 📐 Skyの基本概念
+
+深度バッファを参照して「背景（空）とみなせるピクセルのみ」にレイマーチングベースの大気散乱計算を適用し、シーンのジオメトリと自然に合成します。
+
+### 処理フロー
+
+1. **深度判定**：ジオメトリが存在するピクセルはスキップし、シーンカラーをそのまま返す
+2. **カメラレイの再構築**：逆射影行列・逆ビュー行列からワールド空間のレイ方向を算出
+3. **大気散乱の積分**：レイリー散乱・ミー散乱をステップごとに積分（`scatter()`）
+4. **雲・星・オーロラの合成**：FBMノイズによる雲、プロシージャルな星、オーロラエフェクトを加算
+
+---
+
+## 🎥 デモ
+
+<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+
+<ImageGrid images={[dummyImg.src]} />
+
+---
+
+## 💻 C++実装
+
+```cpp
+class Sky
+{
+public:
+	struct alignas(16) Constants
+	{
+		float gTime; // 経過時間 (iTime)
+		DirectX::XMFLOAT3 pad;
+	};
+
+	Sky(ID3D11Device* device, uint32_t width, uint32_t height);
+
+	void make(ID3D11DeviceContext* immediate_context, ID3D11ShaderResourceView* input_hdr_srv);
+
+	ID3D11ShaderResourceView* get_color_map() const { return color_map->GetColorMap(); }
+
+	float time = 0;
+
+private:
+	std::unique_ptr<FullscreenQuad> bit_block_transfer;
+	std::unique_ptr<Framebuffer>     color_map;
+	Microsoft::WRL::ComPtr<ID3D11Buffer> constants;
+};
+```
+
+```cpp
+void Sky::make(ID3D11DeviceContext* immediate_context, ID3D11ShaderResourceView* input_hdr_srv)
+{
+	Constants cb_data{};
+	cb_data.gTime = time;
+	immediate_context->UpdateSubresource(constants.Get(), 0, 0, &cb_data, 0, 0);
+	immediate_context->PSSetConstantBuffers(8, 1, constants.GetAddressOf());
+
+	color_map->Activate(immediate_context);
+	{
+		ID3D11ShaderResourceView* srvs[2] = {
+			input_hdr_srv,
+			Graphics_Core::instance().get_geometry_buffer()->GetDepth()
+		};
+		bit_block_transfer->Blit(immediate_context, srvs, 0, 2,
+			Resource_Manager::instance().shader_manager.GetNative<Pixel_Shader>("SKY_PS"));
+	}
+	color_map->Deactivate(immediate_context);
+}
+```
+
+---
+
+## 💻 HLSL実装
+
+### 深度判定によるスキップ
+
+```hlsl
+Texture2D tex   : register(t0); // シーンカラー
+Texture2D depth : register(t1); // 深度バッファ
+
+float4 main(VS_OUT pin) : SV_Target
+{
+    float depthVal = depth.Sample(sampler_states[LINEAR_CLAMP], pin.texcoord).r;
+    float4 sceneColor = tex.Sample(sampler_states[LINEAR_CLAMP], pin.texcoord);
+
+    bool isForeground = isReversed
+        ? (depthVal > 0.000001f)   // Reversed-Z: 1.0=Near, 0.0=Far
+        : (depthVal < 0.999999f);  // Normal-Z:   0.0=Near, 1.0=Far
+
+    if (isForeground)
+        return sceneColor; // ジオメトリが存在する箇所はそのまま返す
+
+    // --- 以降、背景（空）とみなされたピクセルのみ大気散乱を計算 ---
+}
+```
+
+### カメラレイの再構築
+
+```hlsl
+// UVをNDC（正規化デバイス座標系）に変換
+float2 ndc = pin.texcoord * 2.0 - 1.0;
+ndc.y = -ndc.y; // DirectXではY軸の向きが反転する
+
+// プロジェクション空間からビュー空間へ
+float4 clipPos = float4(ndc, 1.0, 1.0);
+float4 viewPos = mul(clipPos, inv_projection);
+viewPos.xyz /= viewPos.w;
+
+// ビュー空間からワールド空間へのレイ方向ベクトル
+float3 rayDir = normalize(mul(viewPos.xyz, (float3x3) inv_view));
+```
+
+### レイリー・ミー散乱の積分
+
+```hlsl
+static const float3 bM = float3(21e-6, 21e-6, 21e-6);       // ミー散乱係数
+static const float3 bR = float3(5.8e-6, 13.5e-6, 33.1e-6);  // レイリー散乱係数（波長依存）
+static const float Hr = 8e3;  // レイリースケールハイト
+static const float Hm = 1.2e3; // ミースケールハイト
+
+void scatter(float3 o, float3 d, out float3 col, out float3 scat, float t, float3 Ds)
+{
+    float L = escape(o, d, Ra);
+    float mu = dot(d, Ds);
+    float opmu2 = 1.0 + mu * mu;
+
+    // レイリー位相関数・ミー位相関数（Henyey-Greenstein）
+    float phaseR = 0.0596831 * opmu2;
+    float phaseM = 0.1193662 * (1.0 - g2) * opmu2 / ((2.0 + g2) * pow(abs(1.0 + g2 - 2.0 * g * mu), 1.5));
+
+    // ステップごとに光学的厚さを積分（Out-scattering + In-scattering）
+    float dl = L / (float)steps;
+    for (int i = 0; i < steps; ++i)
+    {
+        float l = (float)i * dl;
+        float3 p = o + d * l;
+        float dR, dM;
+        densities(p, dR, dM); // レイリー/ミー密度（高度に応じて指数減衰）
+        // ... 光源方向への二次積分（太陽光の減衰）を経てR, Mを蓄積 ...
+    }
+
+    col = I * (M * bM * phaseM) + I * (R * bR * phaseR);
+}
+```
+
+### 雲・星の生成（テクスチャ不要のプロシージャルノイズ）
+
+```hlsl
+// 3Dノイズ（テクスチャ不要版）
+float _Noise(float3 x)
+{
+    float3 p = floor(x);
+    float3 f = frac(x);
+    f = f * f * (3.0 - 2.0 * f);
+
+    // 3次元格子上の8点のランダム値を補間
+    float v000 = hash31(p + float3(0, 0, 0));
+    // ... 残り7点も同様 ...
+    return lerp(lerp(lerp(v000, v100, f.x), lerp(v010, v110, f.x), f.y),
+                lerp(lerp(v001, v101, f.x), lerp(v011, v111, f.x), f.y), f.z);
+}
+
+// FBM（Fractional Brownian Motion）で雲の密度を合成
+float fnoise(float3 p, float t)
+{
+    float f = 0.0;
+    f += 0.5000 * _Noise(p); p *= 3.02; p.y -= t * 0.1;
+    f += 0.2500 * _Noise(p); p *= 3.03; p.y += t * 0.06;
+    f += 0.1250 * _Noise(p); p *= 3.01;
+    f += 0.0625 * _Noise(p);
+    return f;
+}
+```
+
+---
+
+## 🎨 処理の詳細
+
+### 1. 物理ベース大気散乱モデル
+
+レイリー散乱（波長依存、短波長=青がより強く散乱）とミー散乱（波長非依存、大気中の塵やエアロゾルによる前方散乱）を、大気を球殻としてモデル化した上でレイマーチングにより積分します。これにより、太陽高度に応じた朝焼け・昼・夕焼けの自然な色変化が得られます。
+
+### 2. 高度ベースの雲密度計算
+
+```hlsl
+void densities(float3 pos, out float rayleigh, out float mie)
+{
+    float h = length(pos - C) - R0; // 地表からの高度
+    rayleigh = exp(-h / Hr);        // 高度に応じた指数減衰
+
+    float cld = 0.0;
+    if (mincloudheight < h && h < maxcloudheight)
+        cld = cloud(pos + float3(xaxiscloud, yaxiscloud, zaxiscloud), gTime) * cloudy;
+
+    mie = exp(-h / Hm) + cld + haze;
+}
+```
+
+指定した高度帯（`mincloudheight` 〜 `maxcloudheight`）でのみFBMノイズによる雲密度を加算し、それ以外の高度ではミー散乱のみが支配的になります。
+
+### 3. 地平線下でのオーロラ・星の切り替え
+
+```hlsl
+if (D.y < -ts)
+{
+    // 地平線より下：反射ハックを適用しつつオーロラを表示
+    D.y = -D.y;
+    aur = smoothstep(0.0, 2.5, aurora(O, D, pin.position.xy));
+}
+else
+{
+    // 通常の空：星のみ表示
+    star = stars(D1);
+}
+```
+
+---
+
+## 🔧 実装のポイント
+
+### 1. テクスチャレスなプロシージャル生成
+
+星・雲・オーロラのいずれもテクスチャアセットを使わず、`hash31()` / `hash33()` によるハッシュベースノイズと `_Noise()` / `fnoise()` によるFBMのみで生成しています。これによりアセット容量を増やさずに動的な空を表現できます。
+
+### 2. Reversed-Z対応の深度判定
+
+```hlsl
+bool isForeground = isReversed
+    ? (depthVal > 0.000001f)
+    : (depthVal < 0.999999f);
+```
+
+エンジンがReversed-Z深度バッファを使用している場合と通常のZバッファの場合の両方に対応し、深度値のどちらが「完全な背景」を示すかを条件分岐で吸収しています。
+
+### 3. 太陽方向とディレクショナルライトの連動
+
+`Ds = normalize(-directional_light_direction)` により、シーン内のディレクショナルライト（太陽光）の方向をそのまま大気散乱の光源方向として利用し、時間帯によるライティング変化と空の見た目を同期させています。
+
+<Aside type="note">
+  Skyはパイプラインの最初のポストエフェクトとして、Deferred Lightingの直後・フォグ系エフェクトの直前に配置されます。
+</Aside>
+
+<Aside type="caution">
+  レイマーチングのステップ数（`steps` / `stepss` = 16）を増やすとより滑らかな散乱表現になりますが、GPU負荷が線形に増加するため注意が必要です。
+</Aside>
