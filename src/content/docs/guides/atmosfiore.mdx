@@ -1,0 +1,99 @@
+---
+title: "個人制作：AtmosFiore (Shader Demo)"
+description: 室内空間の空気感と光を支配する、DirectX 11 / C++ 自作カスタムシェーダープロジェクト。
+sidebar:
+  order: 2
+---
+
+import { Card, CardGrid, Badge, LinkCard } from '@astrojs/starlight/components';
+
+<div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 2rem;">
+  <Badge text="個人制作" variant="note" size="medium" />
+  <Badge text="DirectX 11" variant="caution" size="medium" />
+  <Badge text="C++" variant="danger" size="medium" />
+  <Badge text="HLSL" variant="success" size="medium" />
+</div>
+
+## 作品概要
+
+四方を壁に囲まれた「密室」における光の屈折、反射、そして空気の重さを極限まで追求した、DirectX 11ベースの自作グラフィックスエンジンおよびカスタムシェーダーデモです。
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 30%">項目</th>
+      <th>内容</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>開発環境</strong></td>
+      <td>C++ / DirectX 11 / 自作エンジン / HLSL</td>
+    </tr>
+    <tr>
+      <td><strong>制作期間</strong></td>
+      <td>2025年8月 〜 現在（継続開発中）</td>
+    </tr>
+    <tr>
+      <td><strong>制作人数</strong></td>
+      <td>1人（個人制作）</td>
+    </tr>
+    <tr>
+      <td><strong>ジャンル</strong></td>
+      <td>リアルタイム・グラフィックスデモ</td>
+    </tr>
+    <tr>
+      <td><strong>主な実装機能</strong></td>
+      <td>リアルタイムGI、物理ベースレンダリング（PBR）、高精度SSR、シネマティックカラー</td>
+    </tr>
+    <tr>
+      <td><strong>制作目標</strong></td>
+      <td>既存ゲームエンジンを介さず、DirectX 11ローレベル描画からフォトリアルな空気感を描き切る</td>
+    </tr>
+  </tbody>
+</table>
+
+---
+
+## 💡 技術的な拘り・実装のポイント
+
+### 1. 空間の魂を定義する「IBL（Image-Based Lighting）」
+HDR環境マップを用いた**イメージベースドライティング**を実装し、窓や隙間から射し込む一筋の並行光が、床や壁に衝突した後に起こる**「間接光（光のバウンス）」**の挙動をシミュレート。
+部屋全体の陰影にグラデーションを与え、遮光された角に柔らかい影を落とすことで、室内の「空気の重さ」と「静寂さ」を表現しました。
+- 👉 詳細な実装解説：[IBLの実装詳細](../../reference/ibl/)
+
+### 2. 素材のリアリティを描き分ける「PBR（物理ベースマテリアル）」
+木材の微細な凹凸による吸光、大理石や金属の鋭い反射、カーテンを透過して広がる微細な光の透過（Subsurface Scatteringの簡易実装）など、室内のあらゆるマテリアルを物理パラメータ（粗さ、金属度、透過度）で描き分けます。
+- 👉 詳細な実装解説：[物理ベースマテリアル（PBR）の実装詳細](../../reference/pbr/)
+
+### 3. 空間に深みを与える「シャドウマッピング」
+ポイントライト、ディレクショナルライト、スポットライトからの影をリアルタイムに計算し、室内の物体に正確な影を落とします。
+双放物面シャドウマップを採用し、ポイントライトからの影を高精度に表現することで、空間の立体感とリアリティを向上させました。
+- 👉 詳細な実装解説：[シャドウマッピングの実装詳細](../../reference/shadow-mapping/)
+
+### 4. 映画の1コマのような空気感を演出する「ポストプロセス」
+HDRレンダリングされた高輝度カラー情報を適切に画面に表示するトーンマッピング（ACES Filmic Tone Mapping）と、自動露出（Adaptation）を実装。さらにBloomエフェクトを用いて高輝度部分の発光表現を追加し、建築雑誌のグラビアやシネマライクな絵作りを実現しました。
+- 👉 詳細な実装解説：[トーンマッピングの実装詳細](../../reference/tone-mapping/)
+- 👉 詳細な実装解説：[Bloomの実装詳細](../../reference/bloom/)
+- 👉 詳細な実装解説：[自動露出（Adaptation）の実装詳細](../../reference/adaptation/)
+
+---
+
+## 🔧 直面した課題と解決策
+
+- **課題: ディファードライティングにおけるG-Bufferのメモリ消費と帯域幅**
+  4つのレンダーターゲット（G-Buffer）を使用するディファードライティングにおいて、1920x1080解像度で1フレームあたり約64MBのメモリを消費し、GPUの帯域幅に負荷がかかる課題がありました。また、G-Bufferからの情報読み取りがピクセルシェーダーの負荷を増加させていました。
+
+- **解決策:**
+  1. **G-Bufferレイアウトの最適化**を実施。法線（R16G16B16A16_FLOAT）、アルベド+金属度（R8G8B8A8_UNORM）、位置+AO（R16G16B16A16_FLOAT）、エミッシブ（R16G16B16A16_FLOAT）の4つのRTを使用し、必要な情報を最小限のフォーマットで格納。
+  2. **位置情報の深度からの再構築**を検討し、メモリ消費をさらに削減する手法を調査。現在は位置情報を直接格納しているが、深度バッファから再構築することでG-Buffer2を削減可能。
+
+---
+
+## 🔗 ソースコード
+
+<LinkCard
+  title="GitHub - AtmosFiore"
+  description="DirectX11/C++エンジンのソースコードおよびHLSLシェーダーコードを公開しています。"
+  href="https://github.com/haru-425/AtmosFiore"
+/>

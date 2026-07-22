@@ -1,0 +1,47 @@
+---
+title: "Debug"
+---
+
+import ModalVideo from '../../../components/ModalVideo.astro';
+import ImageGrid from '../../../components/ImageGrid.astro';
+import ImgComparison from '../../../components/ImgComparison.astro';
+
+
+## デモ動画
+クリックすると拡大して再生されます。
+
+<ModalVideo 
+  videoId="O5qT7HGr_Ek" 
+  title="AtmosFiore Shader Demo" 
+/>
+
+## 比較検証
+左が最適化前、右が最適化後の比較です。
+<div style="width:100%; max-width:none;">
+
+<ImageGrid
+  isComparison={true}
+  images={[
+    "https://upload.wikimedia.org/wikipedia/commons/2/2c/Rotating_earth_%28large%29.gif",
+    "https://upload.wikimedia.org/wikipedia/commons/2/2c/Rotating_earth_%28large%29.gif"
+  ]}
+/>
+
+</div>
+
+
+## スライダー比較検証
+左が最適化前、右が最適化後の比較です。
+<ImgComparison 
+    leftImage="https://assets.st-note.com/production/uploads/images/130550950/rectangle_large_type_2_1376e66123c19f027dc07f389db20ca8.jpeg" 
+    rightImage="https://sorae.info/wp-content/uploads/2024/12/2024-12-24-outer-planets-jupiter-saturn-uranus-neptune-hubble-stsci-nasa-esa-heic2416a.jpg" 
+    altLeft="編集前"
+    altRight="編集後"
+  />
+## 動作デモ
+GIFでのアニメーションサンプルです。
+
+<ImageGrid 
+  images={["https://upload.wikimedia.org/wikipedia/commons/2/2c/Rotating_earth_%28large%29.gif"]} 
+/>
+

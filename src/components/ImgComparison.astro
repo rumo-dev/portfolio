@@ -1,0 +1,72 @@
+---
+// Props
+interface Props {
+  leftImage: string;
+  rightImage: string;
+  altLeft?: string;
+  altRight?: string;
+  className?: string;
+}
+
+const {
+  leftImage,
+  rightImage,
+  altLeft = "Before",
+  altRight = "After",
+  className = "",
+} = Astro.props;
+---
+
+<img-comparison-slider class={`comparison-slider ${className}`}>
+  <img slot="first" src={leftImage} alt={altLeft} />
+  <img slot="second" src={rightImage} alt={altRight} />
+</img-comparison-slider>
+
+<script>
+  import "img-comparison-slider";
+</script>
+
+<style>
+.comparison-slider {
+  display: block;
+
+  width: 100%;
+
+  max-width: none;
+
+  overflow: hidden;
+
+  border-radius: 12px;
+
+  margin: 1.5rem 0;
+}
+
+/* ← ここが重要 */
+.comparison-slider img {
+  display: block;
+
+  /* width指定しない */
+  max-width: 100%;
+
+  height: auto;
+
+  margin: 0;
+
+  padding: 0;
+
+  border: 0;
+}
+
+/* ← ShadowDOMのズレ補正 */
+img-comparison-slider::part(first) {
+  top: 0;
+}
+
+img-comparison-slider::part(second) {
+  top: 0;
+}
+
+img-comparison-slider::part(container) {
+  line-height: 0;
+}
+</style>
