@@ -1,0 +1,214 @@
+---
+title: "技術解説：Directional Light（ディレクショナルライト）"
+description: 太陽光などの平行光源を、時刻連動のday-nightサイクルとピッチ・ヨーの手動操作で制御するディレクショナルライトの実装。
+sidebar:
+  order: 23
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import ModalVideo from "../../../components/ModalVideo.astro";
+import ImageGrid from "../../../components/ImageGrid.astro";
+import dummyImg from "../../../assets/dummy.jpg";
+
+太陽光のように、シーン全体に対して常に同じ方向から降り注ぐ平行光を表現するため、AtmosFioreでは **Directional Light（ディレクショナルライト）** を実装しています。単なる光源パラメータの保持にとどまらず、時刻に応じて自動的に太陽の位置が変化するday-nightサイクルと、手動でのピッチ・ヨー操作を両立させているのが特徴です。
+
+---
+
+## 📐 Directional Lightの基本概念
+
+ディレクショナルライトは位置を持たず、「方向」のみでシーン全体を照らします。AtmosFioreでは、この方向を2つの経路で計算できるようにしています。
+
+1. **時刻ベース**：`time_of_day`（0〜24時）から太陽の軌道上の位置を計算
+2. **手動角度ベース**：ピッチ・ヨーの角度から直接方向ベクトルを計算
+
+両モードは`auto_rotate`フラグで排他的に切り替わり、時刻ベースが有効な間はGUI上の手動操作が無効化されます。
+
+---
+
+## 🎥 デモ
+
+<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+
+<ImageGrid images={[dummyImg.src]} />
+
+---
+
+## 💻 C++実装
+
+```cpp
+class DirectionalLight : public LightBase
+{
+public:
+	dx::XMFLOAT4 direction = { 0, 1, 0, 0 };
+
+private:
+	float pitch = -90.0f;
+	float yaw = 0.0f;
+
+	// ===== 時間管理 =====
+	float time_of_day = 12.0f;   // 0〜24
+	float day_duration = 60.0f;  // 60秒で1日
+	bool  auto_rotate = true;
+
+private:
+	// ピッチ・ヨーの角度から方向ベクトルを再構築（手動操作モード）
+	void update_from_angles()
+	{
+		float p = dx::XMConvertToRadians(pitch);
+		float y = dx::XMConvertToRadians(yaw);
+
+		direction.x = cosf(p) * sinf(y);
+		direction.y = sinf(p);
+		direction.z = cosf(p) * cosf(y);
+		direction.w = 0.0f;
+
+		update();
+	}
+
+	// 時刻から太陽軌道上の位置を計算（day-nightサイクルモード）
+	void update_from_time()
+	{
+		float theta = dx::XMConvertToRadians((time_of_day / 24.0f) * 360.0f - 90.0f);
+
+		dx::XMFLOAT3 sun_pos = { cosf(theta), sinf(theta), -0.3f };
+		auto v = dx::XMVector3Normalize(dx::XMLoadFloat3(&sun_pos));
+
+		dx::XMFLOAT3 s;
+		dx::XMStoreFloat3(&s, v);
+
+		// DirectionalLightは「光が進む向き」を保持するため、太陽位置ベクトルを反転
+		direction = { -s.x, -s.y, -s.z, 0.0f };
+
+		update();
+	}
+
+public:
+	void tick(float delta_time)
+	{
+		if (!auto_rotate) return;
+
+		time_of_day += delta_time * (24.0f / day_duration);
+		if (time_of_day >= 24.0f) time_of_day -= 24.0f;
+
+		update_from_time();
+	}
+
+	void update() override
+	{
+		Graphics_Core::instance().set_directional_light(ambientColor, direction, diffuseColor);
+	}
+
+	void draw_imgui(const char* label = "DirectionalLight")
+	{
+		CustomUI::SectionLabel(label);
+
+		if (CustomUI::ColorEdit3("Ambient", (float*)&ambientColor)) update();
+		if (CustomUI::ColorEdit3("Diffuse", (float*)&diffuseColor)) update();
+
+		CustomUI::Checkbox("Auto Day Cycle", &auto_rotate);
+
+		if (CustomUI::SliderFloat("Time", &time_of_day, 0.0f, 24.0f, "%.1f h"))
+			update_from_time();
+
+		ImGui::SliderFloat("Day Duration(sec)", &day_duration, 10.0f, 300.0f);
+
+		// auto_rotate中は手動操作パネルを無効化
+		if (auto_rotate) ImGui::BeginDisabled();
+
+		bool changed = false;
+		float pitch_ui_deg = pitch + 90.0f; // UI上は-90〜90、0で真上になるようオフセット
+		float pitch_ui_rad = dx::XMConvertToRadians(pitch_ui_deg);
+		if (CustomUI::RotationDial("Pitch (上下)", &pitch_ui_rad, 30.0f, -1.570796f, 1.570796f))
+		{
+			pitch = dx::XMConvertToDegrees(pitch_ui_rad) - 90.0f;
+			changed = true;
+		}
+
+		float yaw_rad = dx::XMConvertToRadians(yaw);
+		if (CustomUI::RotationDial("Yaw (左右)", &yaw_rad, 30.0f, -3.14159265f, 3.14159265f))
+		{
+			yaw = dx::XMConvertToDegrees(yaw_rad);
+			changed = true;
+		}
+
+		if (changed) update_from_angles();
+
+		if (auto_rotate) ImGui::EndDisabled();
+	}
+};
+```
+
+---
+
+## 🎨 処理の詳細
+
+### 1. 時刻から太陽軌道への変換
+
+```cpp
+float theta = dx::XMConvertToRadians((time_of_day / 24.0f) * 360.0f - 90.0f);
+dx::XMFLOAT3 sun_pos = { cosf(theta), sinf(theta), -0.3f };
+```
+
+24時間を360°の円軌道にマッピングし、`-90°`のオフセットにより`time_of_day = 6`（朝6時）でおおよそ東の地平線から太陽が昇るよう調整されています。Z成分に`-0.3`という固定オフセットを与えることで、真上を通過する軌道ではなく、やや南（または北）に傾いた自然な軌道を再現しています。
+
+### 2. 「光の向き」としてのdirection
+
+```cpp
+// DirectionalLightは光が進む向き
+direction = { -s.x, -s.y, -s.z, 0.0f };
+```
+
+太陽の位置ベクトル`sun_pos`は「太陽がある方向（＝観測者から見た光源方向）」を表しますが、`direction`メンバは「光が進んでいく向き」として定義されているため、符号を反転させています。この規約により、ライティングシェーダー側では`L = normalize(-directional_light_direction.xyz)`という形で光源方向ベクトルを取得します。
+
+### 3. ピッチ・ヨーの直感的なUI角度変換
+
+```cpp
+float pitch_ui_deg = pitch + 90.0f;
+```
+
+内部的な`pitch`は`-90°`を基準（真下）としていますが、GUIのダイヤル操作では「0°で真上」という直感的な表示にするため、表示用に90°のオフセットを加えて変換しています。
+
+---
+
+## 🔧 実装のポイント
+
+### 1. 自動・手動の排他制御
+
+`auto_rotate`フラグ1つで、時刻ベースの自動更新（`tick()`から呼ばれる`update_from_time()`）と、GUIでの手動角度操作（`update_from_angles()`）を切り替えます。自動モード中は`ImGui::BeginDisabled()`で手動操作UIをグレーアウトし、誤操作を防いでいます。
+
+### 2. Graphics_Coreへの直接反映
+
+```cpp
+void update() override
+{
+	Graphics_Core::instance().set_directional_light(ambientColor, direction, diffuseColor);
+}
+```
+
+`update()`が呼ばれるたびに、エンジンのグローバルなライティング定数バッファへ即座に反映されるため、時刻の自動進行やGUI操作の結果がリアルタイムにシーンへ反映されます。
+
+### 3. Deferred Lightingパスとの連携
+
+ディレクショナルライトの`direction`と`color`は、Deferred Lightingシェーダー内で唯一「ループ処理を伴わない単一光源」として扱われ、シャドウマップ（`directional_shadow_map`）による正射影シャドウと組み合わされます。
+
+```hlsl
+// deferred_lighting_ps.hlsl（抜粋）
+float3 L = normalize(-directional_light_direction.xyz);
+float3 Li = directional_light_color.rgb * 5;
+float NoL = max(0.0f, dot(N, L));
+if (NoL > 0.0f)
+{
+    float3 H = normalize(V + L);
+    float directional_shadow = SampleDirectionalShadow(directional_shadow_map, position, N, L);
+    diffuse  += Li * directional_shadow * NoL * brdf_lambertian(f0, f90, c_diff, HoV);
+    specular += Li * directional_shadow * NoL * brdf_specular_ggx(f0, f90, alpha_roughness, HoV, NoL, NoV, NoH);
+}
+```
+
+<Aside type="note">
+  Directional LightはSky（大気散乱）の光源方向とも共有されており、`Post_Process_Manager::update()`から太陽の向きに応じた空の色変化が同期されます。
+</Aside>
+
+<Aside type="caution">
+  `day_duration`を極端に短くすると、`tick()`内の`time_of_day`が1フレームで大きく進み、太陽の動きがカクついて見えることがあります。滑らかな昼夜遷移を保つには、フレームレートに対して十分な`day_duration`を確保してください。
+</Aside>

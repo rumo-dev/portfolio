@@ -1,0 +1,407 @@
+---
+title: "技術解説：Shadow Mapping（シャドウマッピング）"
+description: 直交投影＋PCFのディレクショナルシャドウと、双放物面マッピングによるポイントライトシャドウ、スクリーンスペースコンタクトシャドウを実装。
+sidebar:
+  order: 4
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import ModalVideo from "../../../components/ModalVideo.astro";
+import ImageGrid from "../../../components/ImageGrid.astro";
+import dummyImg from "../../../assets/dummy.jpg";
+
+物体が光を遮ることで生まれる影を再現するため、AtmosFioreでは **Shadow Mapping** をライト種別ごとに実装しています。ディレクショナルライトには直交投影＋PCF（Percentage Closer Filtering）、ポイントライトにはキューブマップの代わりに軽量な **双放物面マッピング（Dual Paraboloid Mapping）** を採用し、さらに近距離のディテールを補う **スクリーンスペースコンタクトシャドウ** も備えています。
+
+---
+
+## 📐 Shadow Mappingの基本概念
+
+シャドウマッピングは「ライト視点から深度マップを生成し、通常のカメラ視点で描画する際にその深度マップと比較して、遮蔽されていれば影として扱う」という2パス構成の手法です。
+
+### 処理フロー
+
+1. **シャドウパス**：`make_shadow_begin()` でライト視点に切り替え、シーンを深度のみで描画
+2. **深度書き込み終了**：`make_shadow_end()` で通常のレンダーターゲットに復帰
+3. **ライティングパスでの参照**：Deferred Lightingシェーダー内で、ワールド座標をライト視点に変換して深度マップと比較
+
+```cpp
+/**
+ * @brief シャドウマッピング管理クラス
+ *
+ * 処理フロー：
+ * 1. make_shadow_begin() でライト視点レンダリング開始
+ * 2. シーンをライト視点で描画（深度のみ）
+ * 3. make_shadow_end() で通常描画へ復帰
+ * 4. make() でシャドウ適用（ポスト処理）
+ *
+ * @warning
+ * ・シャドウマップ生成中は通常のレンダーターゲットを使用しないこと
+ * ・SRVとDSVの同時バインドは禁止（DX11制約）
+ */
+class shadow
+{
+	// ...
+};
+```
+
+---
+
+## 🎥 デモ
+
+<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+
+<ImageGrid images={[dummyImg.src]} isComparison={true} />
+
+---
+
+## 💻 C++実装
+
+### シャドウマップ本体（深度専用テクスチャ）
+
+```cpp
+/**
+ * @brief シャドウマップクラス
+ *
+ * ライト視点からの深度情報を記録するための深度テクスチャを管理する。
+ *
+ * @remark
+ * - 深度専用レンダリング（カラーRTVは使用しない）
+ * - Typelessフォーマット（R24G8_TYPELESS）→ DSV/SRVで解釈分岐
+ */
+class shadow_map
+{
+public:
+	shadow_map(ID3D11Device* device, uint32_t width, uint32_t height);
+
+	void clear(ID3D11DeviceContext* immediate_context, float depth = 1);
+	void activate(ID3D11DeviceContext* immediate_context);
+	void deactivate(ID3D11DeviceContext* immediate_context);
+
+	ID3D11ShaderResourceView* get_depth_map() { return shader_resource_view.Get(); }
+
+	D3D11_VIEWPORT viewport;
+
+private:
+	Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depth_stencil_view;
+	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> shader_resource_view;
+
+	// activate()前の状態を退避するためのキャッシュ
+	UINT viewport_count{ D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE };
+	D3D11_VIEWPORT cached_viewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
+	Microsoft::WRL::ComPtr<ID3D11RenderTargetView> cached_render_target_view;
+	Microsoft::WRL::ComPtr<ID3D11DepthStencilView> cached_depth_stencil_view;
+};
+```
+
+```cpp
+shadow_map::shadow_map(ID3D11Device* device, uint32_t width, uint32_t height)
+{
+	// Typelessフォーマットで確保することで、DSVとSRVの両方のビューを1つのリソースから作成できる
+	D3D11_TEXTURE2D_DESC desc{};
+	desc.Width = width;
+	desc.Height = height;
+	desc.Format = DXGI_FORMAT_R24G8_TYPELESS;
+	desc.BindFlags = D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_SHADER_RESOURCE;
+	Microsoft::WRL::ComPtr<ID3D11Texture2D> depth_stencil_buffer;
+	device->CreateTexture2D(&desc, 0, depth_stencil_buffer.GetAddressOf());
+
+	D3D11_DEPTH_STENCIL_VIEW_DESC dsv_desc{};
+	dsv_desc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT; // 深度書き込み用ビュー
+	device->CreateDepthStencilView(depth_stencil_buffer.Get(), &dsv_desc, depth_stencil_view.GetAddressOf());
+
+	D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc{};
+	srv_desc.Format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS; // シェーダー読み出し用ビュー
+	device->CreateShaderResourceView(depth_stencil_buffer.Get(), &srv_desc, shader_resource_view.GetAddressOf());
+}
+
+void shadow_map::activate(ID3D11DeviceContext* immediate_context)
+{
+	// 現在のRTV/DSV/ビューポートを退避してから、カラーバッファなし（深度のみ）で描画開始
+	immediate_context->OMGetRenderTargets(1, cached_render_target_view.ReleaseAndGetAddressOf(), cached_depth_stencil_view.ReleaseAndGetAddressOf());
+	immediate_context->RSSetViewports(1, &viewport);
+	ID3D11RenderTargetView* null_rtv{ nullptr };
+	immediate_context->OMSetRenderTargets(1, &null_rtv, depth_stencil_view.Get());
+}
+```
+
+### ディレクショナルシャドウ：直交投影の構築
+
+```cpp
+void shadow::make_directional_shadow_begin()
+{
+	using namespace DirectX;
+
+	const Camera& cam = CameraManager::instance().get_active_camera()->get_camera();
+	const float aspect_ratio = directional_shadow_map->viewport.Width / directional_shadow_map->viewport.Height;
+
+	// カメラの位置だけを注視点として使用（向きは無視）
+	XMVECTOR F = cam.position;
+
+	XMFLOAT4 directional_light_direction = Graphics_Core::instance().get_directional_light_direction();
+	XMVECTOR lightDir = XMVector3Normalize(XMLoadFloat4(&directional_light_direction));
+
+	// ライト方向に光源距離だけ離れた仮想的な視点からカメラ位置を見る
+	XMVECTOR E = F - lightDir * light_view_distance;
+
+	XMMATRIX V = XMMatrixLookAtLH(E, F, XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f));
+	XMMATRIX P = XMMatrixOrthographicLH(
+		light_view_size * aspect_ratio,
+		light_view_size,
+		light_view_near_z,
+		light_view_far_z
+	);
+
+	XMStoreFloat4x4(&last_light_view_projection, V * P); // カリング・シェーダー参照用に保存
+
+	active_shadow_map = directional_shadow_map.get();
+	active_shadow_map->clear(Graphics_Core::instance().get_device_context(), 1.0f);
+	active_shadow_map->activate(Graphics_Core::instance().get_device_context());
+}
+```
+
+### ポイントシャドウ：双放物面マッピングとキューブ面の事前計算
+
+```cpp
+void shadow::make_shadow_begin(PointShadowFace face)
+{
+	using namespace DirectX;
+
+	const auto& lights = Graphics_Core::instance().get_point_light_manager().get_lights();
+
+	// シェーダー側で使う定数（位置・半径・near/far・面の符号・バイアス）を更新
+	Point_Shadow_Constants constants{};
+	if (!lights.empty())
+	{
+		const auto& light = lights.front(); // 現状は先頭の1灯のみシャドウ対応
+		const float shadow_far = light.radius > light_view_near_z ? light.radius : light_view_far_z;
+		constants.position_radius = { light.position.x, light.position.y, light.position.z, light.radius };
+		constants.params = { light_view_near_z, shadow_far, face == PointShadowFace::Front ? 1.0f : -1.0f, point_shadow_bias };
+		constants.options = { point_shadow_strength, static_cast<float>(point_shadow_enabled), 0.0f, 0.0f };
+	}
+
+	// 全方位シャドウ用に、参考情報としてキューブ6面分のView-Projectionも計算しておく
+	if (!lights.empty())
+	{
+		const auto& light = lights.front();
+		XMVECTOR pos = XMLoadFloat3(&light.position);
+
+		XMVECTOR targets[6] = {
+			XMVectorAdd(pos, XMVectorSet(1,0,0,0)),  XMVectorAdd(pos, XMVectorSet(-1,0,0,0)),
+			XMVectorAdd(pos, XMVectorSet(0,1,0,0)),  XMVectorAdd(pos, XMVectorSet(0,-1,0,0)),
+			XMVectorAdd(pos, XMVectorSet(0,0,1,0)),  XMVectorAdd(pos, XMVectorSet(0,0,-1,0))
+		};
+		XMVECTOR ups[6] = {
+			XMVectorSet(0,1,0,0), XMVectorSet(0,1,0,0),
+			XMVectorSet(0,0,-1,0), XMVectorSet(0,0,1,0),
+			XMVectorSet(0,1,0,0), XMVectorSet(0,1,0,0)
+		};
+
+		float fov = XMConvertToRadians(90.0f);
+		float farz = (light_view_far_z > light.radius) ? light_view_far_z : light.radius;
+
+		for (int i = 0; i < 6; ++i)
+		{
+			XMMATRIX V = XMMatrixLookAtLH(pos, targets[i], ups[i]);
+			XMMATRIX P = XMMatrixPerspectiveFovLH(fov, 1.0f, light_view_near_z, farz);
+			XMStoreFloat4x4(&point_face_viewproj[i], V * P);
+		}
+	}
+
+	// 実際のシャドウ生成は「前半球」「後半球」の2枚の双放物面マップのみで行う
+	active_shadow_map = (face == PointShadowFace::Front) ? point_shadow_front.get() : point_shadow_back.get();
+	active_shadow_map->clear(Graphics_Core::instance().get_device_context(), 1.0f);
+	active_shadow_map->activate(Graphics_Core::instance().get_device_context());
+}
+```
+
+---
+
+## 💻 HLSL実装
+
+### ディレクショナルシャドウ：3x3 PCFによるソフトシャドウ
+
+```hlsl
+// shadow_directional.hlsli
+float SampleDirectionalShadow(Texture2D<float> shadow_map, float3 world_position, float3 normal, float3 light_dir)
+{
+    // ワールド座標をライト視点のクリップ空間へ変換
+    float4 light_view_position = mul(float4(world_position, 1.0f), light_view_projection);
+    light_view_position /= light_view_position.w;
+
+    float2 uv = light_view_position.xy * float2(0.5f, -0.5f) + 0.5f;
+    bool outside_shadow_map = any(uv < 0.0f) || any(uv > 1.0f)
+        || light_view_position.z < 0.0f || light_view_position.z > 1.0f;
+    uv = saturate(uv);
+
+    // 法線とライト方向の角度に応じたスロープスケールバイアス（シャドウアクネ対策）
+    float bias = max(0.005f * (1.0f - saturate(dot(normal, light_dir))), 0.0005f);
+    float depth = saturate(light_view_position.z - bias);
+
+    // 3x3 PCF（Percentage Closer Filtering）でエッジを滑らかに
+    float2 texel_size = 1.0f / shadow_map_size;
+    float shadow = 0.0f;
+    [unroll]
+    for (int y = -1; y <= 1; ++y)
+    [unroll]
+    for (int x = -1; x <= 1; ++x)
+    {
+        shadow += shadow_map.SampleCmpLevelZero(
+            comparison_sampler_state,
+            uv + float2(x, y) * texel_size,
+            depth
+        );
+    }
+    float shadow_factor = shadow / 9.0f;
+
+    // シャドウマップ範囲外は常に「影なし(1.0)」として扱う
+    return outside_shadow_map ? 1.0f : lerp(0.0f, 1.0f, shadow_factor);
+}
+```
+
+### ポイントシャドウ：双放物面マッピング（Dual Paraboloid Mapping）
+
+```hlsl
+// shadow_point.hlsli
+cbuffer POINT_SHADOW_CONSTANT_BUFFER : register(b5)
+{
+    float4 point_shadow_position_radius; // xyz: 光源位置, w: 半径
+    float4 point_shadow_params;          // x: near, y: far, z: 面の符号, w: 深度バイアス
+    float4 point_shadow_options;         // x: 強度, y: 有効フラグ
+};
+
+// 放物面投影：方向ベクトルをz+1で割ることで半球全体を1枚の2D UVに押し込む
+float2 DualParaboloidUV(float3 light_vector)
+{
+    float3 direction = normalize(light_vector);
+    float z = abs(direction.z);
+    return direction.xy / (z + 1.0f) * float2(0.5f, -0.5f) + 0.5f;
+}
+
+float PointShadowDepth(float distance_from_light)
+{
+    return saturate((distance_from_light - point_shadow_params.x)
+        / max(point_shadow_params.y - point_shadow_params.x, 0.0001f));
+}
+
+float SamplePointLightShadow(Texture2D<float> frontshadow_map, Texture2D<float> backshadow_map,
+    float3 world_position, float3 normal, float3 light_dir, int light_index)
+{
+    float3 light_vector = world_position - point_shadow_position_radius.xyz;
+    float distance_from_light = length(light_vector);
+
+    bool use_shadow = point_shadow_options.y > 0.0f && light_index == 0
+        && distance_from_light > point_shadow_params.x
+        && distance_from_light < point_shadow_params.y;
+
+    float lit = 1.0f;
+    if (use_shadow)
+    {
+        float2 uv = DualParaboloidUV(light_vector);
+        float slope_bias = point_shadow_params.w * (1.0f - saturate(dot(normal, light_dir)));
+        float receiver_depth = PointShadowDepth(distance_from_light) - max(point_shadow_params.w, slope_bias);
+
+        // z成分の符号で前半球・後半球のどちらのマップを参照するか切り替え
+        lit = light_vector.z >= 0.0f
+            ? frontshadow_map.SampleCmpLevelZero(comparison_sampler_state, uv, receiver_depth)
+            : backshadow_map.SampleCmpLevelZero(comparison_sampler_state, uv, receiver_depth);
+    }
+    return lerp(1.0f, 1.0f, lit); // (strengthによる濃淡合成は現状ノーマライズ済み)
+}
+```
+
+### スクリーンスペース・コンタクトシャドウ
+
+```hlsl
+// 近距離の細かい遮蔽（接触影）をシャドウマップの解像度に依存せずレイマーチングで補う
+float CalculateDeferredWorldContactShadow(
+    float2 uv, float3 lightPos, float lightRadius,
+    Texture2D<float4> GBufferPositionTex, Texture2D<float4> GBufferNormalTex)
+{
+    float3 P = GBufferPositionTex.SampleLevel(sampler_states[POINT_CLAMP], uv, 0).xyz;
+    float3 N = normalize(GBufferNormalTex.SampleLevel(sampler_states[POINT_CLAMP], uv, 0).xyz);
+
+    float3 toLight = lightPos - P;
+    float lightDist = length(toLight);
+    if (lightDist < 0.001f || lightDist > lightRadius) return 1.0f;
+
+    float3 L = normalize(toLight);
+    if (dot(N, L) <= 0.0f) return 1.0f;
+
+    const int MAX_STEPS = 48;
+    float maxDistance = min(lightDist, 0.8f);
+    float step = maxDistance / MAX_STEPS;
+
+    // 自己遮蔽（シャドウアクネ）防止のため法線・光源方向にオフセット
+    float3 start = P + N * 0.015f + L * 0.005f;
+
+    for (int i = 1; i <= MAX_STEPS; ++i)
+    {
+        float3 rayPos = start + L * (i * step);
+        float4 clip = mul(float4(rayPos, 1), view_projection);
+        if (clip.w <= 0) break;
+
+        float2 rayUV = clip.xy / clip.w * float2(0.5, -0.5) + 0.5;
+        if (any(rayUV < 0) || any(rayUV > 1)) break;
+
+        float3 scenePos = GBufferPositionTex.SampleLevel(sampler_states[POINT_CLAMP], rayUV, 0).xyz;
+        if (all(scenePos == 0)) continue;
+
+        float3 d = scenePos - rayPos;
+        float along = dot(d, L);
+        float lateral = length(d - along * L);
+
+        // レイが「実際のジオメトリの厚み」の範囲内をかすめたら遮蔽と判定
+        if (abs(along) < 0.05f && lateral < 0.15f)
+            return 0.0f;
+    }
+    return 1.0f;
+}
+```
+
+---
+
+## 🎨 処理の詳細
+
+### 1. 双放物面マッピングによる全方位シャドウの簡略化
+
+本来ポイントライトの全方位シャドウにはキューブマップ（6枚のシャドウマップ）が必要ですが、AtmosFioreは**前半球・後半球それぞれ1枚ずつ、計2枚**の放物面深度マップで近似する双放物面マッピングを採用しています。`DualParaboloidUV()`が方向ベクトルを`z + 1`で除算することで、半球全体を歪みはあるものの1枚の2D UV空間に収めています。
+
+### 2. スロープスケールバイアスによるシャドウアクネ対策
+
+```hlsl
+float bias = max(0.005f * (1.0f - saturate(dot(normal, light_dir))), 0.0005f);
+```
+
+法線とライト方向のなす角が大きい（＝表面がライトに対して斜めを向いている）ほどバイアスを大きくすることで、平行に近い面での自己遮蔽アーティファクト（シャドウアクネ）を抑えつつ、垂直に近い面では最小限のバイアスに留めてピーターパン現象（影が物体から浮いて見える）を防いでいます。
+
+### 3. シャドウマップとスクリーンスペースシャドウの二段構え
+
+シャドウマップは解像度（2048×2048）に依存するため近距離の細かい接触影の表現が苦手です。`CalculateDeferredWorldContactShadow`はG-Bufferの位置・法線からスクリーンスペースでレイマーチングを行い、シャドウマップでは表現しきれない細かい自己遮蔽（コンタクトシャドウ）を補完します。
+
+---
+
+## 🔧 実装のポイント
+
+### 1. Typelessフォーマットによる DSV/SRV 両立
+
+`shadow_map`クラスは`DXGI_FORMAT_R24G8_TYPELESS`でテクスチャを確保し、書き込み用に`D24_UNORM_S8_UINT`のDSV、読み出し用に`R24_UNORM_X8_TYPELESS`のSRVという異なる解釈のビューを同一リソースから作成しています。ただしDX11の制約上、同時にバインドすることはできないため、`activate()` / `deactivate()`で用途を厳密に切り替えています。
+
+### 2. 現状はポイントライト1灯のみシャドウ対応
+
+```cpp
+bool use_shadow = point_shadow_options.y > 0.0f && light_index == 0 && ...
+```
+
+`light_index == 0`という条件から分かる通り、現バージョンではシーン内の複数ポイントライトのうち先頭の1灯のみがシャドウを落とせる設計です。これはシャドウマップ用のリソース（前後2枚）が固定で1灯分しか確保されていないためで、複数灯対応にはシャドウアトラスなどの拡張が必要になります。
+
+### 3. スポット・エリアライトのシャドウは未実装
+
+`deferred_lighting_ps.hlsl`では`shadow_spot.hlsli` / `shadow_area.hlsli`がインクルードされていますが、現状これらのファイルは空であり、スポットライトとエリアライトはシャドウを落とさず、光源計算（減衰・BRDF）のみが行われます。将来的な拡張ポイントです。
+
+<Aside type="note">
+  ディレクショナルシャドウマップは`b5`（ポイント用定数）とは別に、ライトView-Projection行列を`light_view_projection`としてシェーダー側に渡し、Deferred Lightingパスの`SampleDirectionalShadow`から参照されます。
+</Aside>
+
+<Aside type="caution">
+  シャドウマップ解像度（2048×2048）や`light_view_size`（直交投影範囲）を変更する際は、シャドウの精度とカバー範囲がトレードオフになる点に注意してください。範囲を広げるほど1テクセルあたりのワールド距離が大きくなり、シャドウのエッジが粗くなります。
+</Aside>

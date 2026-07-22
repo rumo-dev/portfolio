@@ -1,0 +1,331 @@
+---
+title: "技術解説：Area Light（LTC面光源）"
+description: LTC（Linearly Transformed Cosines）による、矩形・円形・球形の面光源をリアルタイムに正確積分するエリアライトの実装。
+sidebar:
+  order: 24
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import ModalVideo from "../../../components/ModalVideo.astro";
+import ImageGrid from "../../../components/ImageGrid.astro";
+import dummyImg from "../../../assets/dummy.jpg";
+
+窓やパネルライトのような「面」を持つ光源を物理的に正確に表現するため、AtmosFioreでは **Area Light（面光源）** を **LTC（Linearly Transformed Cosines）** という手法で実装しています。矩形・円形（ディスク）・球形の3形状に対応し、テクスチャルックアップテーブルを使わないTextureless近似で軽量に動作します。
+
+---
+
+## 📐 Area Lightの基本概念
+
+点光源やスポットライトは「1点から出る光」として近似できますが、窓やパネルライトのような面光源は本来「面全体からの光の積分」として計算する必要があります。LTCは、BRDF（この場合はGGX/Lambertian）を線形変換されたコサイン分布として近似することで、面光源のエッジ積分をリアルタイムに計算可能にする手法です（Eric Heitz, 2016）。
+
+### GPU転送用データ構造
+
+```cpp
+enum class AreaLightShape : uint32_t
+{
+	Rectangle = 0, ///< 矩形
+	Disk = 1,      ///< 円形（ディスク）
+	Sphere = 2     ///< 球形
+};
+
+struct AreaLightGpu
+{
+	dx::XMFLOAT3 position;
+	float        width;
+
+	dx::XMFLOAT3 direction;
+	float        height;
+
+	dx::XMFLOAT3 right;
+	float        radius;
+
+	uint32_t     shape;
+	float        intensity;
+	uint32_t     padding1;
+	uint32_t     padding2;
+
+	dx::XMFLOAT3 color;
+	float        padding3;
+};
+```
+
+---
+
+## 🎥 デモ
+
+<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+
+<ImageGrid images={[dummyImg.src]} />
+
+---
+
+## 💻 C++実装
+
+```cpp
+/**
+ * @brief エリアライトクラス
+ *
+ * 矩形・円形・球形の面光源を表現するライト
+ * ソフトシャドウやよりリアルなライティングを実現する
+ */
+class AreaLight : public LightBase
+{
+public:
+	AreaLight()
+	{
+		position = { 0, 0, 0 };
+		direction = { 0, -1, 0 };
+		right = { 1, 0, 0 };
+		width = 2.0f;
+		height = 2.0f;
+		radius = 1.0f;
+		shape = AreaLightShape::Rectangle;
+		intensity = 1.0f;
+		diffuseColor = { 1.0f, 1.0f, 1.0f, 1.0f };
+	}
+
+	dx::XMFLOAT3 position;
+	dx::XMFLOAT3 direction;
+	dx::XMFLOAT3 right;
+	float width;
+	float height;
+	float radius;
+	AreaLightShape shape;
+	float intensity;
+
+	void update() override {}
+
+	void draw_imgui(const char* label = "AreaLight") override
+	{
+		if (ImGui::TreeNode(label))
+		{
+			ImGui::ColorEdit3("Diffuse", (float*)&diffuseColor);
+			ImGui::DragFloat3("Position", (float*)&position, 0.1f);
+			ImGui::DragFloat3("Direction", (float*)&direction, 0.1f);
+			ImGui::DragFloat3("Right", (float*)&right, 0.1f);
+
+			const char* shapeItems[] = { "Rectangle", "Disk", "Sphere" };
+			int currentShape = static_cast<int>(shape);
+			if (ImGui::Combo("Shape", &currentShape, shapeItems, 3))
+				shape = static_cast<AreaLightShape>(currentShape);
+
+			if (shape == AreaLightShape::Rectangle)
+			{
+				ImGui::DragFloat("Width", &width, 0.1f, 0.1f, 50.0f);
+				ImGui::DragFloat("Height", &height, 0.1f, 0.1f, 50.0f);
+			}
+			else if (shape == AreaLightShape::Disk || shape == AreaLightShape::Sphere)
+			{
+				ImGui::DragFloat("Radius", &radius, 0.1f, 0.1f, 50.0f);
+			}
+
+			ImGui::DragFloat("Intensity", &intensity, 0.01f, 0.0f, 10.0f);
+			ImGui::TreePop();
+		}
+	}
+};
+```
+
+管理クラス（`AreaLightManager`）もPoint/Spot Lightと同様にStructuredBuffer（`t10`）+ 定数バッファ（`b7`）による構成です。
+
+---
+
+## 💻 HLSL実装：LTCコア
+
+### 多角形エッジの解析的積分
+
+```hlsl
+// area_light.hlsli
+#define LTC_LUT_SIZE 64
+
+// 2頂点間の球面上のエッジ寄与を解析的に積分（Fittingによる近似式）
+float IntegrateEdge(float3 v1, float3 v2)
+{
+    float3 crossV = cross(v1, v2);
+    if (dot(crossV, crossV) < 1e-7) return 0.0;
+
+    float x = clamp(dot(v1, v2), -0.9999, 0.9999);
+    float y = abs(x);
+
+    float a = 0.8543985 + (0.4965155 + 0.0145206 * y) * y;
+    float b = 3.4175940 + (4.1616724 + y) * y;
+    float theta = (x > 0) ? (a / b) : (0.5 * rsqrt(max(1.0 - x * x, 1e-6)) - a / b);
+
+    return crossV.z * theta;
+}
+
+// 多角形の全エッジについてIntegrateEdgeを合算（可変頂点数、Rectangle/Disk/Sphere共通）
+float IntegratePolygon(float3 p[12], int numVertices)
+{
+    for (int i = 0; i < numVertices; i++)
+    {
+        float len = length(p[i]);
+        if (len < 1e-6) return 0.0;
+        p[i] /= len; // 単位球面へ投影
+    }
+
+    float sum = 0.0;
+    for (int i = 0; i < numVertices; i++)
+        sum += IntegrateEdge(p[i], p[(i + 1) % numVertices]);
+
+    return max(sum, 0.0);
+}
+```
+
+### 形状ごとの頂点生成とLTC空間への変換
+
+```hlsl
+// ラフネスに応じた異方性ストレッチ行列（テクスチャレス近似）
+float3x3 LTC_MatrixInv(float roughness, float NoV)
+{
+    roughness = max(roughness, 0.04);
+    float r2 = roughness * roughness;
+    float stretchX = 1.0 / r2;
+    float stretchY = 1.0 / roughness;
+
+    return float3x3(
+        stretchX, 0.0, 0.0,
+        0.0, stretchY, 0.0,
+        0.0, 0.0, 1.0
+    );
+}
+
+float LTC_Evaluate(float3 N, float3 V, float3 P, AreaLight_GPU light, float3x3 Minv)
+{
+    float3 D = normalize(light.direction);
+    float3x3 basis = BuildBasis(N, V);      // シェーディング点の接空間基底
+    float3x3 TForm = mul(Minv, basis);      // ラフネスストレッチ + 接空間変換を合成
+
+    float3 p[12];
+    int numVertices = 0;
+
+    if (light.shape == AREA_LIGHT_SHAPE_RECTANGLE)
+    {
+        float facing = dot(D, normalize(P - light.position));
+        if (facing <= 0) return 0.0; // 面の裏側からは光が届かない
+
+        float3 R = normalize(light.right - D * dot(light.right, D));
+        float3 U = normalize(cross(R, D));
+        float hw = light.width * 0.5, hh = light.height * 0.5;
+
+        p[0] = light.position - R * hw - U * hh;
+        p[1] = light.position + R * hw - U * hh;
+        p[2] = light.position + R * hw + U * hh;
+        p[3] = light.position - R * hw + U * hh;
+        numVertices = 4;
+    }
+    else if (light.shape == AREA_LIGHT_SHAPE_DISK)
+    {
+        // 8角形近似でディスクを表現
+        numVertices = 8;
+        // ... R, U を用いた8頂点の円周配置 ...
+    }
+    else if (light.shape == AREA_LIGHT_SHAPE_SPHERE)
+    {
+        // シェーディング点に追従するビルボードディスクとして12角形近似
+        numVertices = 12;
+        GenerateSphereVertices(light.position, light.radius, P, p);
+    }
+
+    // 全頂点をシェーディング点中心・LTC空間へ変換してから積分
+    for (int i = 0; i < numVertices; i++)
+    {
+        p[i] -= P;
+        p[i] = mul(TForm, p[i]);
+    }
+
+    return IntegratePolygon(p, numVertices);
+}
+```
+
+### 拡散・鏡面それぞれの評価関数
+
+```hlsl
+// 拡散反射：単位行列（歪みなし）でLTC評価 = Lambertianコサイン分布そのもの
+float3 LTC_Diffuse(float3 N, float3 V, float3 P, AreaLight_GPU light, float3 c_diff, float3 f0, float3 f90)
+{
+    float integral = LTC_Evaluate(N, V, P, light, float3x3(1,0,0, 0,1,0, 0,0,1));
+    return light.color * light.intensity * integral * c_diff / PI;
+}
+
+// 鏡面反射：ラフネスに応じたLTC_MatrixInvで歪めてから評価し、正規化・フレネルを適用
+float3 LTC_Specular(float3 N, float3 V, float3 P, AreaLight_GPU light, float roughness, float3 f0, float3 f90)
+{
+    float NoV = saturate(dot(N, V));
+    float3x3 Minv = LTC_MatrixInv(roughness, NoV);
+
+    float integral = LTC_Evaluate(N, V, P, light, Minv);
+    float ltcNorm = 1.0 / (Minv[0][0] * Minv[1][1]); // 変換のヤコビアン補正
+    integral *= ltcNorm;
+
+    float3 F = f0 + (f90 - f0) * pow(1.0 - NoV, 5.0); // Schlickフレネル
+    return light.color * light.intensity * integral * F;
+}
+```
+
+### Deferred Lightingでの呼び出し
+
+```hlsl
+for (int i = 0; i < numAreaLights; ++i)
+{
+    if (areaLights[i].intensity <= 0) continue;
+    if (dot(N, -normalize(areaLights[i].direction)) <= 0) continue; // 面の向き判定
+
+    float3 ltcDiffuse  = LTC_Diffuse(N, V, position, areaLights[i], c_diff, f0, f90);
+    float3 ltcSpecular = LTC_Specular(N, V, position, areaLights[i], roughness, f0, f90);
+
+    const float exposure = 5.0; // ディレクショナルライトとスケールを揃える
+    diffuse  += ltcDiffuse  * exposure;
+    specular += ltcSpecular * exposure;
+}
+```
+
+---
+
+## 🎨 処理の詳細
+
+### 1. 球面エッジ積分によるコサイン分布の解析解
+
+`IntegrateEdge`は、多角形の各エッジが単位球面上に投影されたときの立体角寄与を、フィッティングされた有理近似式（Heitz論文由来）で計算します。これにより、面光源全体をコサイン加重で積分した結果を、頂点数分のループのみで解析的に求められます。
+
+### 2. テクスチャルックアップテーブル不要の近似
+
+本来のLTC手法ではラフネスとNoVに応じた3x3逆行列を事前計算したルックアップテーブル（LUTテクスチャ）から取得しますが、AtmosFioreでは`LTC_MatrixInv()`内で対角行列による簡易な異方性ストレッチ（`1/roughness²`, `1/roughness`）を直接計算する **Textureless近似** を採用し、LUTテクスチャなしで動作します。
+
+### 3. 形状ごとの多角形近似
+
+- **Rectangle**：4頂点の矩形をそのまま使用（もっとも安価で正確）
+- **Disk**：8角形で円周を近似
+- **Sphere**：シェーディング点の方を向くビルボードディスクとして12角形で近似し、球の見かけの円盤を表現
+
+---
+
+## 🔧 実装のポイント
+
+### 1. Diffuse/Specularで異なる変換行列
+
+拡散反射の評価では歪みのない単位行列（等方コサイン分布）を使う一方、鏡面反射の評価ではラフネスに応じた`LTC_MatrixInv`で多角形をあらかじめ歪めてから積分することで、粗い表面ほど反射像がぼやけて広がる見た目を1つの積分関数（`LTC_Evaluate`）で共用しています。
+
+### 2. ヤコビアン正規化
+
+```hlsl
+float ltcNorm = 1.0 / (Minv[0][0] * Minv[1][1]);
+```
+
+`Minv`による空間の歪みは積分値のスケールも変えてしまうため、対角成分の積の逆数で正規化し、鏡面反射のエネルギーが保存されるよう補正しています。
+
+### 3. Directional Lightとの露出スケール統一
+
+```hlsl
+const float exposure = 5.0;
+```
+
+ディレクショナルライト側も`Li = directional_light_color.rgb * 5`という同じ係数でスケールされており、面光源と平行光源が同一シーン内で自然な明るさバランスになるよう調整されています。
+
+<Aside type="note">
+  エリアライトのStructuredBufferはレジスタ`t10`、ライト数の定数バッファは`b7`にバインドされます。デバッグ描画では矩形（`Debug_Cube`）・円盤（`Debug_Disk`）・球（`Debug_Sphere`）を形状に応じて使い分けます。
+</Aside>
+
+<Aside type="caution">
+  Textureless近似は本家LTC LUTに比べてラフネス変化に対するフィッティング精度が粗いため、非常に低いラフネス（鏡面に近い面）では反射像の形状にわずかな誤差が生じる場合があります。
+</Aside>

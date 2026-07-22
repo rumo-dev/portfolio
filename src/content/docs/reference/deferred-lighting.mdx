@@ -1,0 +1,273 @@
+---
+title: "技術解説：Deferred Lighting（ディファードライティング）"
+description: G-Bufferを読み出し、Directional/Point/Spot/Area Lightを含む全光源を1パスで合成するディファードライティングパイプライン。
+sidebar:
+  order: 19
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import ModalVideo from "../../../components/ModalVideo.astro";
+import ImageGrid from "../../../components/ImageGrid.astro";
+import dummyImg from "../../../assets/dummy.jpg";
+
+複数光源を効率的に処理するため、AtmosFioreでは **Deferred Lighting（ディファードライティング）** を採用しています。ジオメトリパスで書き出したG-Bufferを読み出し、ディレクショナル・ポイント・スポット・エリアという4種類の光源とIBL（Image-Based Lighting）を、フルスクリーン1パスで物理ベースBRDF（GGX + Lambertian）により合成します。
+
+---
+
+## 📐 Deferred Lightingの基本概念
+
+ディファードレンダリングでは、ジオメトリ描画（G-Buffer書き込み）とライティング計算を完全に分離します。ライティングパスはG-Bufferをテクスチャとして読み込むフルスクリーンクアッド1枚の描画で完結するため、光源数が増えてもジオメトリの再描画コストは変わりません。
+
+### 処理フロー
+
+1. **G-Bufferのサンプリング**：法線・ラフネス・アルベド・メタルネス・位置・AO・エミッシブを取得
+2. **BRDF入力パラメータの構築**：`f0`（垂直入射反射率）・`alpha_roughness`・`c_diff`（拡散反射色）を算出
+3. **光源ループ**：Directional → Point → Spot → Areaの順に寄与を加算
+4. **IBLの加算**：環境光による拡散・鏡面寄与を加算
+5. **AOの適用と出力**：`diffuse + specular + emissive`を最終色として出力
+
+---
+
+## 🎥 デモ
+
+<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+
+<ImageGrid images={[dummyImg.src]} />
+
+---
+
+## 💻 C++実装：ライティングパスの起動
+
+```cpp
+void Post_Process_Manager::begin()
+{
+	auto* ctx = Graphics_Core::instance().get_device_context();
+
+	fsquad.Clear(ctx, 0.5f, 0.5f, 0.5f, 1.0f);
+	fsquad.Activate(ctx, Graphics_Core::instance().get_geometry_buffer()->GetDepthStencilView());
+
+	// G-Buffer 4枚 + シャドウマップ3枚 = 7枚のSRVをまとめてバインド
+	ID3D11ShaderResourceView* srvs[GBUFFER_COUNT + 3]{};
+	Graphics_Core::instance().get_geometry_buffer()->GetShaderResourceViews(srvs);
+	srvs[GBUFFER_COUNT + 0] = shadower->get_point_shadow_front_map();
+	srvs[GBUFFER_COUNT + 1] = shadower->get_point_shadow_back_map();
+	srvs[GBUFFER_COUNT + 2] = shadower->get_directional_shadow_map();
+
+	// 全光源のStructuredBufferをGPUへアップロード
+	point_light_manager.upload_to_gpu(ctx);
+	spot_light_manager.upload_to_gpu(ctx);
+	area_light_manager.upload_to_gpu(ctx);
+
+	Graphics_Core::instance().get_fullscreen_quad()->Blit(
+		ctx, srvs, 0, GBUFFER_COUNT + 3,
+		Resource_Manager::instance().shader_manager.GetNative<Pixel_Shader>("DEFERRED_LIGHTING_PS")
+	);
+}
+```
+
+このワンパスのフルスクリーン描画で、G-Bufferとシャドウマップ・全光源のStructuredBufferを結合し、ディレクショナル・ポイント・スポット・エリアライトすべての寄与とIBLを合成した最終的なHDRシーンカラーを生成します。この結果がPost_Process_Managerのポストエフェクトパイプライン（`fsquad`）の最初の入力になります。
+
+---
+
+## 💻 HLSL実装：ライティングメインループ
+
+```hlsl
+// deferred_lighting_ps.hlsl
+#include "bidirectional_reflectance_distribution_function.hlsli"
+#include "shadow_directional.hlsli"
+#include "point_light.hlsli"
+#include "shadow_point.hlsli"
+#include "spot_light.hlsli"
+#include "shadow_spot.hlsli"
+#include "area_light.hlsli"
+
+Texture2D<float4> gbuffer0 : register(t0); // Normal + Roughness
+Texture2D<float4> gbuffer1 : register(t1); // Albedo + Metalness
+Texture2D<float4> gbuffer2 : register(t2); // Position + AO
+Texture2D<float4> gbuffer3 : register(t3); // Emissive
+Texture2D<float>  point_shadow_front_map      : register(t4);
+Texture2D<float>  point_shadow_back_map       : register(t5);
+Texture2D<float>  directional_shadow_map      : register(t6);
+
+float4 main(VS_OUT pin) : SV_TARGET
+{
+    // ── 1. G-Bufferのデコード ──────────────────────────────
+    float4 sampled = gbuffer0.SampleLevel(sampler_states[POINT_CLAMP], pin.texcoord, 0);
+    float3 normal = normalize(sampled.xyz);
+    float  roughness = sampled.w;
+
+    sampled = gbuffer1.SampleLevel(sampler_states[POINT_CLAMP], pin.texcoord, 0);
+    float3 basecolor = sampled.xyz;
+    float  metallic = sampled.w;
+
+    sampled = gbuffer2.SampleLevel(sampler_states[POINT_CLAMP], pin.texcoord, 0);
+    float3 position = sampled.xyz;
+    float  occlusion = sampled.w;
+
+    float3 emissive = gbuffer3.SampleLevel(sampler_states[POINT_CLAMP], pin.texcoord, 0).xyz;
+
+    // ── 2. BRDF入力パラメータ ─────────────────────────────
+    const float3 f0 = lerp(0.04f, basecolor, metallic);
+    const float3 f90 = 1.0f;
+    const float alpha_roughness = roughness * roughness;
+    const float3 c_diff = lerp(basecolor, 0.0f, metallic);
+
+    const float3 N = normal;
+    const float3 V = normalize(camera_position.xyz - position);
+    const float  NoV = max(0.0f, dot(N, V));
+
+    float3 diffuse = 0;
+    float3 specular = 0.0f;
+
+    // ── 3. ディレクショナルライト ───────────────────────
+    float3 L = normalize(-directional_light_direction.xyz);
+    float3 Li = directional_light_color.rgb * 5;
+    float NoL = max(0.0f, dot(N, L));
+    if (NoL > 0.0f)
+    {
+        float3 H = normalize(V + L);
+        float NoH = max(0.0f, dot(N, H));
+        float HoV = max(0.0f, dot(H, V));
+        float shadow = SampleDirectionalShadow(directional_shadow_map, position, N, L);
+
+        diffuse  += Li * shadow * NoL * brdf_lambertian(f0, f90, c_diff, HoV);
+        specular += Li * shadow * NoL * brdf_specular_ggx(f0, f90, alpha_roughness, HoV, NoL, NoV, NoH);
+    }
+
+    // ── 4. ポイントライト（StructuredBufferループ）──────
+    for (int i = 0; i < numPointLights; ++i)
+    {
+        if (pointLights[i].intensity <= 0.0f || pointLights[i].radius <= 0.0f) continue;
+
+        float3 light_vector = pointLights[i].position - position;
+        float dist = length(light_vector);
+        if (dist >= pointLights[i].radius) continue;
+
+        float3 Lp = light_vector / max(dist, 0.0001f);
+        float pointNoL = max(0.0f, dot(N, Lp));
+        if (pointNoL <= 0.0f) continue;
+
+        // 逆二乗風の距離減衰（半径でsaturateしてから2乗）
+        float attenuation = pow(max(0.0f, 1.0f - (dist / pointLights[i].radius)), 2.0f);
+        float3 pointLi = pointLights[i].color * pointLights[i].intensity * attenuation;
+        float3 H = normalize(V + Lp);
+        float NoH = max(0.0f, dot(N, H));
+        float HoV = max(0.0f, dot(H, V));
+        float shadow = SamplePointLightShadow(point_shadow_front_map, point_shadow_back_map, position, N, Lp, i);
+
+        diffuse  += pointLi * shadow * pointNoL * brdf_lambertian(f0, f90, c_diff, HoV);
+        specular += pointLi * shadow * pointNoL * brdf_specular_ggx(f0, f90, alpha_roughness, HoV, pointNoL, NoV, NoH);
+    }
+
+    // ── 5. スポットライト（角度減衰 + 距離減衰）──────────
+    for (int i = 0; i < numSpotLights; ++i)
+    {
+        if (spotLights[i].intensity <= 0.0f || spotLights[i].radius <= 0.0f) continue;
+
+        float3 light_vector = spotLights[i].position - position;
+        float dist = length(light_vector);
+        if (dist >= spotLights[i].radius) continue;
+
+        float3 Ls = light_vector / max(dist, 0.0001f);
+        float spotNoL = max(0.0f, dot(N, Ls));
+        if (spotNoL <= 0.0f) continue;
+
+        float3 lightDir = normalize(spotLights[i].direction);
+        float cosAngle = dot(-Ls, lightDir);
+        float cosInner = cos(spotLights[i].innerAngle);
+        float cosOuter = cos(spotLights[i].outerAngle);
+
+        float spotAttenuation = (cosAngle < cosOuter) ? 0.0f
+            : (cosAngle < cosInner) ? smoothstep(cosOuter, cosInner, cosAngle) : 1.0f;
+
+        float distanceAttenuation = pow(max(0.0f, 1.0f - (dist / spotLights[i].radius)), 2.0f);
+        float totalAttenuation = spotAttenuation * distanceAttenuation;
+        if (totalAttenuation <= 0.0f) continue;
+
+        float3 spotLi = spotLights[i].color * spotLights[i].intensity * totalAttenuation;
+        float3 H = normalize(V + Ls);
+        float NoH = max(0.0f, dot(N, H));
+        float HoV = max(0.0f, dot(H, V));
+
+        diffuse  += spotLi * spotNoL * brdf_lambertian(f0, f90, c_diff, HoV);
+        specular += spotLi * spotNoL * brdf_specular_ggx(f0, f90, alpha_roughness, HoV, spotNoL, NoV, NoH);
+    }
+
+    // ── 6. エリアライト（LTC）─────────────────────────────
+    for (int i = 0; i < numAreaLights; ++i)
+    {
+        if (areaLights[i].intensity <= 0) continue;
+        if (dot(N, -normalize(areaLights[i].direction)) <= 0) continue; // 面の裏側は無視
+
+        float3 ltcDiffuse  = LTC_Diffuse(N, V, position, areaLights[i], c_diff, f0, f90);
+        float3 ltcSpecular = LTC_Specular(N, V, position, areaLights[i], roughness, f0, f90);
+
+        const float exposure = 5.0; // ディレクショナルライトとスケールを揃える
+        diffuse  += ltcDiffuse  * exposure;
+        specular += ltcSpecular * exposure;
+    }
+
+    // ── 7. IBL（環境光）───────────────────────────────────
+    diffuse  += ibl_radiance_lambertian(N, V, roughness, c_diff, f0) * 0.2;
+    specular += ibl_radiance_ggx(N, V, roughness, f0) * 0.2;
+
+    // ── 8. AO適用と最終合成 ───────────────────────────────
+    diffuse  *= occlusion;
+    specular *= occlusion;
+
+    float3 Lo = diffuse + specular + emissive;
+    return float4(Lo, 1.0f);
+}
+```
+
+---
+
+## 🎨 処理の詳細
+
+### 1. glTFメタリック・ラフネスワークフローのBRDF
+
+`f0 = lerp(0.04, basecolor, metallic)` により、誘電体（非金属）はおおよそ4%の垂直入射反射率、金属はベースカラー自体を反射率として扱う、glTF 2.0仕様準拠のPBRマテリアルモデルを採用しています。鏡面項にはSmith Joint GGX（`v_ggx` + `d_ggx`）、拡散項にはLambertianを使用しています。
+
+```hlsl
+float3 brdf_specular_ggx(float3 f0, float3 f90, float alpha_roughness, float VoH, float NoL, float NoV, float NoH)
+{
+    float3 F = f_schlick(f0, f90, VoH);
+    float Vis = v_ggx(NoL, NoV, alpha_roughness);
+    float D = d_ggx(NoH, alpha_roughness);
+    return F * Vis * D;
+}
+```
+
+### 2. 光源ごとに異なる減衰モデル
+
+- **Point/Spot**：`pow(saturate(1 - dist/radius), 2.0)` という半径ベースのなめらかな減衰
+- **Spot追加項**：内側角度・外側角度に対する`smoothstep`によるコーン状の減衰
+- **Area**：距離減衰ではなくLTC（Linearly Transformed Cosines）による立体角の厳密な積分
+
+### 3. 早期棄却（Early-out）による最適化
+
+各光源ループの冒頭で`intensity <= 0`や`dist >= radius`といった条件による`continue`を多用し、影響範囲外の光源計算を早期にスキップしてピクセルシェーダーの実行コストを抑えています。
+
+---
+
+## 🔧 実装のポイント
+
+### 1. StructuredBufferによる可変光源数対応
+
+Point/Spot/Areaライトはいずれも定数バッファではなくStructuredBuffer（`t8`〜`t10`）で渡され、`for (int i = 0; i < numPointLights; ++i)`のようにシェーダー内で動的にループ回数を変えられる設計になっています。
+
+### 2. シャドウの光源種別ごとの個別サンプリング
+
+`SampleDirectionalShadow` / `SamplePointLightShadow`など、光源の種類に応じた専用シャドウサンプリング関数を呼び分けることで、ディレクショナルライトの正射影シャドウとポイントライトのキューブマップ的な前後2枚シャドウを共存させています。
+
+### 3. IBLとダイレクトライトの重み付けバランス
+
+IBLの寄与に`* 0.2`という係数を掛けているのは、ディレクショナル/ポイント/スポットライトの`intensity * 5`（前述の`Li = directional_light_color.rgb * 5`）とのバランスを取り、環境光がシーンを白飛びさせすぎないようにするための調整です。
+
+<Aside type="note">
+  Deferred Lightingの出力（`fsquad`）は、そのままPost_Process_Managerのポストエフェクトパイプライン最初の入力（Skyの直前）として使われます。
+</Aside>
+
+<Aside type="caution">
+  ディファードレンダリングは半透明オブジェクトを扱えないという制約があります。AtmosFioreでは半透明マテリアル（ガラス・カーテンなど）は別途フォワードパスで処理する想定です。
+</Aside>

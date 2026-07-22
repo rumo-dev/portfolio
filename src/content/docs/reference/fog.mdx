@@ -1,0 +1,297 @@
+---
+title: "技術解説：Fog System（フォグシステム）"
+description: 距離・指数・高さ・ボリュームの4方式を多段合成する、AtmosFioreのフォグシステム。
+sidebar:
+  order: 18
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import ModalVideo from "../../../components/ModalVideo.astro";
+import ImageGrid from "../../../components/ImageGrid.astro";
+import dummyImg from "../../../assets/dummy.jpg";
+
+屋外シーンの奥行き表現と雰囲気作りのため、AtmosFioreでは4種類のフォグを **`FogBase`** という共通インターフェースの下に実装し、パイプライン上で多段合成しています。単純な距離減衰から、光散乱を考慮したレイマーチングベースのボリュームフォグまで、用途に応じて使い分けられる構成です。
+
+---
+
+## 📐 Fog Systemの基本概念
+
+```cpp
+/**
+ * @brief フォグエフェクト基底クラス
+ *
+ * 全フォグ実装はこのクラスを継承する。
+ * - make()          : フォグ効果を適用して内部バッファに書き込む
+ * - get_color_map()  : 結果 SRV を返す（次パスへの接続用）
+ * - DrawDebugUI()    : ImGui パネルを描画（派生クラスでオーバーライド）
+ */
+class FogBase
+{
+public:
+	virtual void make(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView* src_srv) = 0;
+	virtual ID3D11ShaderResourceView*  get_color_map()         const = 0;
+	virtual ID3D11ShaderResourceView** get_color_map_address()  const = 0;
+	virtual void DrawDebugUI() {}
+
+	bool is_enabled = true;
+};
+```
+
+4つの派生クラスはすべて「前段のSRVを受け取り、自身のフォグを適用したSRVを返す」という同一のインターフェースに従うため、パイプライン上でどの順序に挿入しても、あるいは特定の方式だけを無効化しても破綻しません。
+
+### パイプライン上の位置
+
+```
+Sky → VolumetricFog → HeightFog → DistanceFog → ExponentialFog → DoF → ...
+```
+
+物理的なボリューム散乱（VolumetricFog）を最初に適用し、そのあとに比較的軽量な解析的フォグ（Height / Distance / Exponential）を重ねる構成です。
+
+---
+
+## 🎥 デモ
+
+<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+
+<ImageGrid images={[dummyImg.src]} isComparison={true} />
+
+---
+
+## 1️⃣ Distance Fog（距離フォグ）
+
+カメラからの距離に対してリニアにフォグを掛ける、もっともシンプルな実装です。
+
+```cpp
+/**
+ * @brief 距離フォグ（Distance Fog）
+ *
+ * カメラからの距離に基づいてリニアにフォグを掛けるシンプルな実装。
+ * 近距離・遠距離の明確なフォグ帯域を設定できる。
+ *
+ * 密度式: t = saturate( (dist - start) / (end - start) )
+ *         fog = lerp(scene, fog_color, t * density)
+ */
+class DistanceFog : public FogBase
+{
+public:
+	struct alignas(16) Config
+	{
+		float fog_start  = 10.0f;   // フォグが始まるカメラ距離 [world unit]
+		float fog_end    = 1000.0f; // フォグが最大密度になる距離 [world unit]
+		float density    = 1.0f;    // 最大到達時の密度乗数 [0..1]
+		float intensity  = 1.0f;    // フォグ輝度乗数
+		float fog_color[3] = { 0.7f, 0.8f, 0.9f };
+		int   is_enabled = 1;
+	};
+	Config config{};
+};
+```
+
+```hlsl
+// distance_fog_ps.hlsl
+float4 main(VS_OUT pin) : SV_TARGET
+{
+    float4 scene = scene_color.SampleLevel(sampler_states[POINT_CLAMP], pin.texcoord, 0);
+    if (!is_enabled) return scene;
+
+    float3 pos_ws = gbuffer2.SampleLevel(sampler_states[POINT_CLAMP], pin.texcoord, 0).xyz;
+    float dist = length(pos_ws - camera_position.xyz);
+
+    float t = saturate((dist - fog_start) / max(fog_end - fog_start, 0.0001));
+    float fog_amount = t * density;
+
+    float3 color = lerp(scene.rgb, fog_color * intensity, fog_amount);
+    return float4(color, scene.a);
+}
+```
+
+---
+
+## 2️⃣ Exponential Fog（指数フォグ）
+
+遠景が自然にフェードアウトする屋外シーン向けに、指数関数的な密度カーブを採用しています。
+
+```cpp
+/**
+ * @brief 指数フォグ（Exponential Fog）
+ *
+ * 密度式(Exp):   fog = 1 - exp( -density * dist )
+ * 密度式(Exp2):  fog = 1 - exp( -(density * dist)^2 )
+ */
+class ExponentialFog : public FogBase
+{
+public:
+	enum class Mode : int { Exponential = 0, Exponential2 = 1 };
+
+	struct alignas(16) Config
+	{
+		float density   = 0.0026f;
+		float intensity = 1.0f;
+		int   mode      = static_cast<int>(Mode::Exponential2);
+		int   is_enabled = 1;
+		float fog_color[3] = { 0.7f, 0.8f, 0.9f };
+	};
+	Config config{};
+};
+```
+
+`Exponential`（`1 - exp(-density * dist)`）は緩やかな減衰、`Exponential2`（`1 - exp(-(density * dist)^2)`）は近距離では薄く遠距離で急激に濃くなる、より現実の大気に近いカーブになります。
+
+---
+
+## 3️⃣ Height Fog（高さフォグ）
+
+ワールド空間のY座標に基づいて密度を計算し、地面付近にのみ霞がかかる表現に適しています。
+
+```cpp
+/**
+ * @brief 高さフォグ（Height Fog）
+ *
+ * 密度式: density = density_max * exp( -falloff * max(y - base_height, 0) )
+ */
+class HeightFog : public FogBase
+{
+public:
+	struct alignas(16) Config
+	{
+		float base_height    = 0.0f;    // フォグが最大密度になるY座標
+		float falloff        = 1.549f;  // 高さ方向の密度減衰係数
+		float density_max    = 0.8f;    // base_heightにおける最大密度 [0..1]
+		float intensity      = 0.022f;  // フォグ輝度乗数
+		DirectX::XMFLOAT3 fog_color = { 0.7f, 0.8f, 0.9f };
+		int   is_enabled     = 1;
+
+		// ノイズ・アニメーション拡張
+		float noise_scale    = 0.6305f;
+		float noise_strength = 2.785f;
+		float time;
+		DirectX::XMFLOAT3 wind_velocity = { 0.473f, 0, 0 };
+	};
+	Config config{};
+};
+```
+
+`noise_scale` / `noise_strength` / `wind_velocity` の追加パラメータにより、静的な高さフォグに時間経過とともに揺らぐノイズと風による移流を加え、単調にならない自然な霧の表現を実現しています。
+
+---
+
+## 4️⃣ Volumetric Fog（ボリュームフォグ）
+
+レイマーチング＋FBMノイズ＋各光源の散乱を計算する、もっとも物理的に正確なフォグです。従来Deferred Lighting内に実装されていたロジックをポストプロセスパスへ分離したものです。
+
+```cpp
+/**
+ * @brief ボリュームフォグ
+ *
+ * レイマーチング + FBM ノイズ + 各光源の散乱を計算する物理ベースフォグ。
+ */
+class VolumetricFog : public FogBase
+{
+public:
+	struct alignas(16) Config
+	{
+		int   grid_width  = 160;
+		int   grid_height = 90;
+		int   grid_depth  = 128;
+
+		float density_base = 0.02f;
+		float scattering   = 0.8f;
+		float absorption   = 0.002f;
+		float anisotropy   = 0.65f;
+
+		float noise_scale = 0.0f;
+		float intensity   = 1.0f;
+		float fog_near    = 0.1f;
+		float fog_far     = 60.0f;
+
+		int   is_enabled = 1;
+		float time = 0.0f;
+	};
+	Config config{};
+
+private:
+	// Froxel（Volume Fog Grid）用コンピュートシェーダー
+	Microsoft::WRL::ComPtr<ID3D11ComputeShader> cs_injection_;    // ライト注入
+	Microsoft::WRL::ComPtr<ID3D11ComputeShader> cs_accumulation_; // Z軸累積
+
+	// 3Dテクスチャ（Froxelグリッド：160x90x128）
+	Microsoft::WRL::ComPtr<ID3D11Texture3D> light_volume_tex_;  // ライト注入バッファ
+	Microsoft::WRL::ComPtr<ID3D11Texture3D> accum_volume_tex_;  // 累積バッファ
+};
+```
+
+### Froxel（3Dフォググリッド）による2パス構成
+
+```cpp
+// ── パス1: ライト注入 (Compute Shader) ──────────────────────
+ctx->CSSetShader(cs_injection_.Get(), nullptr, 0);
+ctx->CSSetShaderResources(5, 1, &point_shadow_front); // 点光源シャドウ
+ctx->CSSetShaderResources(7, 1, &directional_shadow); // 太陽光シャドウ
+ctx->CSSetUnorderedAccessViews(0, 1, light_volume_uav_.GetAddressOf(), nullptr);
+// グループサイズ (8, 8, 4) に対するグリッドディスパッチ
+ctx->Dispatch(20, 12, config.grid_depth / 4);
+
+// ── パス2: Z軸累積 (Compute Shader) ────────────────────────
+ctx->CSSetShader(cs_accumulation_.Get(), nullptr, 0);
+ctx->CSSetShaderResources(0, 1, light_volume_srv_.GetAddressOf());
+ctx->CSSetUnorderedAccessViews(0, 1, accum_volume_uav_.GetAddressOf(), nullptr);
+// カメラに近い側からZ方向へ透過率を積算し、最終的なボリューム値を確定
+```
+
+160×90×128のFroxelグリッド（3Dテクスチャ）に対し、まずポイントライト・スポットライト・ディレクショナルライトの散乱をシャドウマップ込みで注入し（パス1）、続いてカメラから奥へ向かって透過率を累積する（パス2）ことで、光の筋（God Ray的な効果）を含む物理的なボリューム散乱を実現しています。
+
+---
+
+## 🎨 処理の詳細
+
+### 1. 4方式の使い分け
+
+| 方式 | 特徴 | 適した用途 |
+|---|---|---|
+| Distance | リニア減衰、帯域指定が明確 | ステージ境界のフェード、視程制限 |
+| Exponential | 指数カーブ、自然な遠景フェード | 屋外オープンフィールド |
+| Height | Y座標依存、ノイズ＋風で揺らぐ | 谷底の朝霧、地面付近の靄 |
+| Volumetric | レイマーチング＋光散乱（Froxel） | 光源の筋、洞窟・森の光芒表現 |
+
+### 2. 共通の状態退避パターン
+
+すべてのフォグクラスの `make()` は、他のポストエフェクトと同様にSRV・深度ステンシル・ラスタライザ・ブレンドステートを退避してから2Dレンダーステートを設定し、処理後に確実に復元しています。
+
+### 3. is_enabledによる無効化時のパススルー
+
+```cpp
+if (!is_enabled)
+{
+	// 無効化されている場合は前段をそのままBlitして終了
+	target_->Activate(ctx);
+	blit_->Blit(ctx, &src_srv, 0, 1, nullptr);
+	target_->Deactivate(ctx);
+	return;
+}
+```
+
+VolumetricFogをはじめ各フォグは、無効時に前段の結果をそのまま次段へパススルーする実装になっており、4方式のうち任意の組み合わせをオン・オフしてもパイプラインが破綻しません。
+
+---
+
+## 🔧 実装のポイント
+
+### 1. FogBaseによる差し替え可能な設計
+
+`FogBase` という共通仮想インターフェースにより、`Post_Process_Manager` 側は具体的なフォグの種類を意識せず `make()` / `get_color_map()` のみで4種を連結できます。新しいフォグ方式を追加する場合も、既存コードへの影響を最小限にできます。
+
+### 2. Volumetric FogのFroxelグリッド解像度
+
+`grid_width=160, grid_height=90, grid_depth=128` というグリッド解像度は、画面解像度よりも大幅に低い解像度でボリューム計算を行うことで、リアルタイム性能とビジュアル品質のバランスを取っています。
+
+### 3. 時間・風による動的な変化
+
+HeightFogとVolumetricFogはいずれも `time` パラメータを持ち、`Post_Process_Manager::update()` から毎フレーム加算されることで、静止画的にならない自然な揺らぎを表現しています。
+
+<Aside type="note">
+  4種のフォグはすべて `Sky → VolumetricFog → HeightFog → DistanceFog → ExponentialFog` の順で多段適用されます。順序を変更する場合は、各方式が想定する入力（HDRリニア色）が保たれているか確認してください。
+</Aside>
+
+<Aside type="caution">
+  VolumetricFogは3Dテクスチャ（Froxelグリッド）とCompute Shaderを使用するため、`D3D_FEATURE_LEVEL_11_0` 以上が必須です。また、他の解析的フォグと比べてGPU負荷が高いため、パフォーマンス要件に応じて無効化できるようにしておくことを推奨します。
+</Aside>

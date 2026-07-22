@@ -1,0 +1,239 @@
+---
+title: "技術解説：Spot Light（スポットライト）"
+description: 内側・外側角度によるコーン状の減衰を持つ、懐中電灯やスポットライトのような方向性光源の実装。
+sidebar:
+  order: 22
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import ModalVideo from "../../../components/ModalVideo.astro";
+import ImageGrid from "../../../components/ImageGrid.astro";
+import dummyImg from "../../../assets/dummy.jpg";
+
+懐中電灯やスポットライトのような、特定方向に円錐状の光を放つ光源を表現するため、AtmosFioreでは **Spot Light（スポットライト）** を実装しています。Point Lightの距離減衰に加え、内側角度・外側角度による滑らかなコーン状の減衰を組み合わせています。
+
+---
+
+## 📐 Spot Lightの基本概念
+
+スポットライトはPoint Lightに「方向（direction）」「内側角度（innerAngle）」「外側角度（outerAngle）」を加えたモデルです。ライト方向と、ライトからピクセルへの方向のなす角度が内側角度未満なら減衰なし、外側角度を超えたら完全に光が届かないものとして扱い、その間を`smoothstep`で滑らかに補間します。
+
+### GPU転送用データ構造
+
+```cpp
+struct SpotLightGpu
+{
+    dx::XMFLOAT3 position;
+    float        radius;
+
+    dx::XMFLOAT3 direction;
+    float        intensity;
+
+    dx::XMFLOAT3 color;
+    float        innerAngle;
+
+    float        outerAngle;
+    float        padding[3];
+};
+```
+
+---
+
+## 🎥 デモ
+
+<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+
+<ImageGrid images={[dummyImg.src]} />
+
+---
+
+## 💻 C++実装
+
+```cpp
+/**
+ * @brief スポットライトクラス
+ *
+ * 指定方向に円錐状に光を照らすライト
+ */
+class SpotLight : public LightBase
+{
+public:
+	SpotLight()
+	{
+		position = { 0, 0, 0 };
+		direction = { 0, -1, 0 };
+		radius = 10.0f;
+		intensity = 1.0f;
+		innerAngle = 0.5f;
+		outerAngle = 0.7f;
+		diffuseColor = { 1.0f, 1.0f, 1.0f, 1.0f };
+	}
+
+	struct SpotLightGpu
+	{
+		dx::XMFLOAT3 position;
+		float radius;
+
+		dx::XMFLOAT3 direction;
+		float intensity;
+
+		dx::XMFLOAT3 color;
+		float innerAngle;
+
+		float outerAngle;
+		float padding[3];
+	};
+
+	dx::XMFLOAT3 position;
+	dx::XMFLOAT3 direction;
+	float radius;
+	float intensity;
+	float innerAngle;
+	float outerAngle;
+	float padding[1] = {};
+
+	void update() override {}
+
+	void draw_imgui(const char* label = "SpotLight") override
+	{
+		if (ImGui::TreeNode(label))
+		{
+			ImGui::ColorEdit3("Diffuse", (float*)&diffuseColor);
+			ImGui::DragFloat3("Position", (float*)&position, 0.1f);
+			ImGui::DragFloat3("Direction", (float*)&direction, 0.1f);
+			ImGui::DragFloat("Radius", &radius, 0.1f, 0.1f, 200.0f);
+			ImGui::DragFloat("Intensity", &intensity, 0.01f, 0.0f, 10.0f);
+			ImGui::DragFloat("Inner Angle", &innerAngle, 0.01f, 0.0f, 3.14f);
+			ImGui::DragFloat("Outer Angle", &outerAngle, 0.01f, 0.0f, 3.14f);
+			ImGui::TreePop();
+		}
+	}
+};
+```
+
+管理クラス（`SpotLightManager`）はPoint Lightと同一のパターン（StructuredBuffer + フラスタムカリング + Dynamic Map/Unmap）で実装されており、GPU転送はレジスタ`t9`（StructuredBuffer）・`b6`（ライト数定数バッファ）にバインドされます。
+
+---
+
+## 💻 HLSL実装
+
+```hlsl
+// spot_light.hlsli
+struct SpotLight_GPU
+{
+    float3 position;
+    float  radius;
+
+    float3 direction;
+    float  intensity;
+
+    float3 color;
+    float  innerAngle;
+
+    float  outerAngle;
+    float  padding[3];
+};
+
+StructuredBuffer<SpotLight_GPU> spotLights : register(t9);
+cbuffer CB_SpotLightCount : register(b6)
+{
+    uint numSpotLights;
+    uint SLpadding[3];
+};
+```
+
+```hlsl
+// deferred_lighting_ps.hlsl（抜粋）
+for (int i = 0; i < numSpotLights; ++i)
+{
+    if (spotLights[i].intensity <= 0.0f || spotLights[i].radius <= 0.0f)
+        continue;
+
+    float3 light_vector = spotLights[i].position - position;
+    float dist = length(light_vector);
+    if (dist >= spotLights[i].radius)
+        continue;
+
+    float3 Ls = light_vector / max(dist, 0.0001f);
+    float spotNoL = max(0.0f, dot(N, Ls));
+    if (spotNoL <= 0.0f)
+        continue;
+
+    // ── コーン状の角度減衰 ──────────────────────────
+    float3 lightDir = normalize(spotLights[i].direction);
+    float cosAngle  = dot(-Ls, lightDir);          // ピクセル方向とライト方向のなす角
+    float cosInner  = cos(spotLights[i].innerAngle); // 内側角度: ここまでは減衰なし
+    float cosOuter  = cos(spotLights[i].outerAngle); // 外側角度: ここを超えると光が届かない
+
+    float spotAttenuation = 1.0f;
+    if (cosAngle < cosOuter)
+    {
+        spotAttenuation = 0.0f; // コーンの外
+    }
+    else if (cosAngle < cosInner)
+    {
+        // 内側角度と外側角度の間を滑らかに補間
+        spotAttenuation = smoothstep(cosOuter, cosInner, cosAngle);
+    }
+
+    // ── 距離減衰（Point Lightと同一モデル）─────────────
+    float distanceAttenuation = pow(max(0.0f, 1.0f - (dist / spotLights[i].radius)), 2.0f);
+    float totalAttenuation = spotAttenuation * distanceAttenuation;
+
+    if (totalAttenuation <= 0.0f)
+        continue;
+
+    float3 spotLi = spotLights[i].color * spotLights[i].intensity * totalAttenuation;
+    float3 H = normalize(V + Ls);
+    float NoH = max(0.0f, dot(N, H));
+    float HoV = max(0.0f, dot(H, V));
+
+    diffuse  += spotLi * spotNoL * brdf_lambertian(f0, f90, c_diff, HoV);
+    specular += spotLi * spotNoL * brdf_specular_ggx(f0, f90, alpha_roughness, HoV, spotNoL, NoV, NoH);
+}
+```
+
+---
+
+## 🎨 処理の詳細
+
+### 1. cos角度によるコーン判定
+
+角度そのものを比較するのではなく、`cos(innerAngle)` / `cos(outerAngle)`をあらかじめ計算しておき、`dot(-Ls, lightDir)`（内積＝cos角度）と直接比較することで、シェーダー内での`acos`呼び出し（コストが高い）を回避しています。
+
+### 2. 内側・外側角度によるソフトエッジ
+
+```hlsl
+float spotAttenuation = (cosAngle < cosOuter) ? 0.0f
+    : (cosAngle < cosInner) ? smoothstep(cosOuter, cosInner, cosAngle) : 1.0f;
+```
+
+内側角度の内部では常に100%の光量、外側角度の外側では完全に0、その間を`smoothstep`で滑らかに繋ぐことで、スポットライト特有のソフトなコーンエッジを表現しています。境界が硬い（ステップ状の）ライトになるのを防いでいます。
+
+### 3. 距離減衰との掛け合わせ
+
+角度減衰（`spotAttenuation`）と距離減衰（`distanceAttenuation`）は独立して計算されたのち乗算されるため、コーンの中心軸に近くても半径外なら光が届かず、逆に半径内でもコーンの外なら光が届かないという、直感的な振る舞いになります。
+
+---
+
+## 🔧 実装のポイント
+
+### 1. Point Lightとの実装パターンの共通化
+
+`SpotLightManager`は`PointLightManager`とほぼ同一の設計（StructuredBuffer・フラスタムカリング・Dynamic Map/Unmap・デバッグ球描画）を踏襲しており、光源管理システム全体で一貫したコードパターンを維持しています。
+
+### 2. 早期棄却によるコスト削減
+
+`totalAttenuation <= 0.0f`の時点で`continue`することで、コーンの外側にあるピクセルに対する不要なBRDF計算（`brdf_lambertian` / `brdf_specular_ggx`の呼び出し）をスキップしています。
+
+### 3. GUI上での角度パラメータ（ラジアン）
+
+`innerAngle` / `outerAngle`はラジアン単位で保持され、ImGui上では`ImGui::DragFloat`で0〜3.14（約180°）の範囲を直接編集できるようになっています。
+
+<Aside type="note">
+  スポットライトのStructuredBufferはレジスタ`t9`、ライト数の定数バッファは`b6`にバインドされます。
+</Aside>
+
+<Aside type="caution">
+  `innerAngle`が`outerAngle`より大きい値に設定されると、`smoothstep`の引数が逆転してアーティファクトが発生するため、GUIやデータ側で`innerAngle <= outerAngle`を保証する必要があります。
+</Aside>

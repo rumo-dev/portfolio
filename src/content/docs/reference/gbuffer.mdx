@@ -1,0 +1,270 @@
+---
+title: "技術解説：G-Buffer（ジオメトリバッファ）"
+description: ディファードレンダリングで使用する幾何情報を格納する4枚構成のG-Bufferと、その書き込み・読み出しパイプライン。
+sidebar:
+  order: 20
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import ModalVideo from "../../../components/ModalVideo.astro";
+import ImageGrid from "../../../components/ImageGrid.astro";
+import dummyImg from "../../../assets/dummy.jpg";
+
+多数の光源を効率よく処理するため、AtmosFioreは **ディファードレンダリング** を採用しています。その中核となるのが、ジオメトリパスで書き出した法線・アルベド・位置・エミッシブなどの幾何情報を保持する **G-Buffer** です。ライティング計算をジオメトリ描画から完全に分離することで、光源数が増えてもドローコールを増やさずに済む設計になっています。
+
+---
+
+## 📐 G-Bufferの基本概念
+
+G-Bufferは、シーン中の各ピクセルについて「どんな材質か・どんな法線か・どこにあるか」といったシェーディングに必要な情報を、複数のレンダーターゲット（MRT: Multiple Render Targets）にまとめて書き出したものです。ライティングパスではこのG-Bufferをテクスチャとして読み込むだけで、ジオメトリの再描画なしに任意の光源数のライティング計算を行えます。
+
+### G-Bufferレイアウト（4 RT + Depth）
+
+```
+GBuffer0 : R16G16B16A16_FLOAT
+    xyz = ワールド空間法線
+    w   = ラフネス (0〜1)
+
+GBuffer1 : R8G8B8A8_UNORM
+    rgb = ベースカラー（アルベド、sRGB）
+    a   = メタルネス（0=誘電体、1=金属）
+
+GBuffer2 : R16G16B16A16_FLOAT
+    xyz = ワールド空間位置（高精度）
+    w   = アンビエントオクルージョン（AO）
+
+GBuffer3 : R16G16B16A16_FLOAT
+    rgb = エミッシブカラー
+    w   = サブサーフェス/クリアコート/スペキュラ強度（マテリアル依存）
+
+Depth Buffer : D32_FLOAT
+    位置復元・シャドウマッピング・ポストプロセスに使用する深度値
+```
+
+1920×1080解像度でおよそ64MB/フレームのメモリを消費します。位置情報（GBuffer2.xyz）は深度からの復元も可能ですが、AtmosFioreでは実装の単純さを優先し直接格納しています。
+
+---
+
+## 🎥 デモ
+
+<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+
+<ImageGrid images={[dummyImg.src]} />
+
+---
+
+## 💻 C++実装
+
+```cpp
+/// Gバッファのレンダーターゲット数（位置・法線・アルベド・マテリアルなど）
+#define GBUFFER_COUNT  4
+
+/**
+ * @brief ジオメトリバッファ（G-buffer）
+ *
+ * 遅延レンダリング（Deferred Rendering）用の複数レンダーターゲットを管理するクラス。
+ * 各ピクセルに対してジオメトリ情報（法線・アルベド・深度など）を格納する。
+ *
+ * @warning
+ * D3D11の仕様上、同一リソースをSRVとRTVとして同時にバインドすることは禁止されている。
+ * ライティングパスでSRVとして使用する前に、必ずレンダーターゲットからアンバインドすること。
+ */
+class GeometryBuffer
+{
+public:
+	GeometryBuffer(ID3D11Device* device, UINT width, UINT height);
+	virtual ~GeometryBuffer();
+
+	void Clear(ID3D11DeviceContext* immediate_context);
+	void Activate(ID3D11DeviceContext* immediate_context);
+	void Deactivate(ID3D11DeviceContext* immediate_context);
+
+	void GetShaderResourceViews(
+		ID3D11ShaderResourceView** out_srvs,
+		UINT max_count = GBUFFER_COUNT,
+		UINT start_index = 0
+	) const;
+
+	ID3D11DepthStencilView*   GetDepthStencilView() const { return m_depthStencilView; }
+	ID3D11ShaderResourceView* GetDepth()            const { return m_depthStencilShaderResourceView; }
+
+private:
+	UINT m_cachedViewportCount = { D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE };
+	D3D11_VIEWPORT m_cachedViewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
+	ID3D11RenderTargetView* m_cachedRenderTargetViews[GBUFFER_COUNT];
+	ID3D11DepthStencilView* m_cachedDepthStencilView;
+
+	ID3D11Texture2D*          m_renderTargetBuffers[GBUFFER_COUNT] = {};
+	ID3D11RenderTargetView*   m_renderTargetViews[GBUFFER_COUNT] = {};
+	ID3D11ShaderResourceView* m_renderTargetShaderResourceViews[GBUFFER_COUNT] = {};
+
+	ID3D11Texture2D*          m_depthStencilBuffer = {};
+	ID3D11DepthStencilView*   m_depthStencilView = {};
+	ID3D11ShaderResourceView* m_depthStencilShaderResourceView = {};
+
+	D3D11_VIEWPORT m_viewport = {};
+};
+```
+
+### 構築（各RTのフォーマット・名前付け）
+
+```cpp
+GeometryBuffer::GeometryBuffer(ID3D11Device* device, UINT width, UINT height)
+{
+	DXGI_FORMAT formats[GBUFFER_COUNT] =
+	{
+		DXGI_FORMAT_R16G16B16A16_FLOAT, // GBuffer0: Normal + Roughness
+		DXGI_FORMAT_R8G8B8A8_UNORM,     // GBuffer1: Albedo + Metalness
+		DXGI_FORMAT_R16G16B16A16_FLOAT, // GBuffer2: Position + AO
+		DXGI_FORMAT_R16G16B16A16_FLOAT, // GBuffer3: Emissive + Specular
+	};
+
+	for (size_t i = 0; i < GBUFFER_COUNT; ++i)
+	{
+		D3D11_TEXTURE2D_DESC desc = {};
+		desc.Width = width;
+		desc.Height = height;
+		desc.MipLevels = 1;
+		desc.ArraySize = 1;
+		desc.Format = formats[i];
+		desc.SampleDesc.Count = 1;
+		desc.Usage = D3D11_USAGE_DEFAULT;
+		desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+		device->CreateTexture2D(&desc, 0, &m_renderTargetBuffers[i]);
+
+		device->CreateRenderTargetView(m_renderTargetBuffers[i], nullptr, &m_renderTargetViews[i]);
+		device->CreateShaderResourceView(m_renderTargetBuffers[i], nullptr, &m_renderTargetShaderResourceViews[i]);
+	}
+
+	// 深度バッファ: R32_TYPELESS（DSVとSRVを両立させるためTypelessで確保）
+	D3D11_TEXTURE2D_DESC depth_desc = {};
+	depth_desc.Width = width;
+	depth_desc.Height = height;
+	depth_desc.Format = DXGI_FORMAT_R32_TYPELESS;
+	depth_desc.BindFlags = D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_SHADER_RESOURCE;
+	device->CreateTexture2D(&depth_desc, 0, &m_depthStencilBuffer);
+
+	D3D11_DEPTH_STENCIL_VIEW_DESC dsv_desc{};
+	dsv_desc.Format = DXGI_FORMAT_D32_FLOAT;
+	device->CreateDepthStencilView(m_depthStencilBuffer, &dsv_desc, &m_depthStencilView);
+
+	D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
+	srv_desc.Format = DXGI_FORMAT_R32_FLOAT;
+	device->CreateShaderResourceView(m_depthStencilBuffer, &srv_desc, &m_depthStencilShaderResourceView);
+}
+```
+
+### Activate / Deactivate（MRTの退避・復元）
+
+```cpp
+void GeometryBuffer::Activate(ID3D11DeviceContext* immediate_context)
+{
+	m_cachedViewportCount = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
+	immediate_context->RSGetViewports(&m_cachedViewportCount, m_cachedViewports);
+	immediate_context->OMGetRenderTargets(GBUFFER_COUNT, m_cachedRenderTargetViews, &m_cachedDepthStencilView);
+
+	immediate_context->RSSetViewports(1, &m_viewport);
+	immediate_context->OMSetRenderTargets(GBUFFER_COUNT, m_renderTargetViews, m_depthStencilView);
+}
+
+void GeometryBuffer::Deactivate(ID3D11DeviceContext* immediate_context)
+{
+	immediate_context->RSSetViewports(m_cachedViewportCount, m_cachedViewports);
+	immediate_context->OMSetRenderTargets(1, m_cachedRenderTargetViews, m_cachedDepthStencilView);
+
+	for (size_t i = 0; i < GBUFFER_COUNT; ++i)
+		if (m_cachedRenderTargetViews[i]) m_cachedRenderTargetViews[i]->Release();
+	if (m_cachedDepthStencilView) m_cachedDepthStencilView->Release();
+}
+```
+
+---
+
+## 💻 HLSL実装：G-Bufferへの書き込み（ジオメトリパス）
+
+```hlsl
+// gltf_deferred_geometry_ps.hlsl
+struct PS_OUT_GBUFFER
+{
+    float4 gbuffer0 : SV_TARGET0; // Normal + Roughness
+    float4 gbuffer1 : SV_TARGET1; // Albedo + Metalness
+    float4 gbuffer2 : SV_TARGET2; // World Position + AO
+    float4 gbuffer3 : SV_TARGET3; // Emissive + Subsurface/Clearcoat
+};
+
+PS_OUT_GBUFFER main(VS_OUT pin, bool is_front_face : SV_IsFrontFace)
+{
+    PS_OUT_GBUFFER pout;
+    const material_constants m = materials[material];
+
+    // ベースカラー・メタリック・ラフネス・エミッシブ・オクルージョンをテクスチャからサンプリング
+    // (glTFの pbrMetallicRoughness ワークフローに準拠)
+    // ...
+
+    // 法線マップ適用後の最終法線（裏面ならTBNを反転）
+    if (is_front_face == false) { T = -T; B = -B; N = -N; }
+
+    pout.gbuffer0.xyz = N;
+    pout.gbuffer0.w   = roughness_factor;
+
+    pout.gbuffer1.rgb = basecolor_factor.rgb;
+    pout.gbuffer1.w   = metallic_factor;
+
+    pout.gbuffer2.xyz = pin.w_position.xyz;
+    pout.gbuffer2.w   = occlusion_factor;
+
+    pout.gbuffer3.rgb = emissive_factor;
+    pout.gbuffer3.w   = 0;
+
+    return pout;
+}
+```
+
+### G-Bufferの読み出し（ライティングパス側）
+
+```hlsl
+// 使用例（ライティングパスでの読み出し）
+float3 normal    = normalize(gbuffer0.xyz);
+float  roughness = gbuffer0.w;
+float3 albedo    = SRGBToLinear(gbuffer1.rgb);
+float  metalness = gbuffer1.a;
+float3 position  = gbuffer2.xyz;
+float  ao        = gbuffer2.w;
+float3 emissive  = gbuffer3.rgb;
+```
+
+---
+
+## 🎨 処理の詳細
+
+### 1. Multiple Render Targets（MRT）による一括書き込み
+
+ジオメトリパスの1回のドローコールで4枚のレンダーターゲットに同時書き込みを行うことで、マテリアルごとの複雑なシェーディング処理をジオメトリ描画時に確定させ、ライティングパスでは単純なテクスチャフェッチのみで済むようにしています。
+
+### 2. フォーマットの使い分け
+
+法線・位置・エミッシブなどHDR的な値を持つバッファには`R16G16B16A16_FLOAT`を、0〜1に収まるアルベド・メタルネスには`R8G8B8A8_UNORM`を採用し、精度とメモリ帯域のバランスを取っています。
+
+### 3. Typeless深度バッファによるDSV/SRV両立
+
+深度バッファを`R32_TYPELESS`で確保することで、同一リソースに対して深度書き込み用のDSV（`D32_FLOAT`）と、シェーダー読み出し用のSRV（`R32_FLOAT`）の両方のビューを作成できるようにしています。
+
+---
+
+## 🔧 実装のポイント
+
+### 1. SRV/RTV排他制約への対応
+
+DirectX 11では同一リソースをSRVとRTVとして同時にバインドすることはできません。`Deactivate()`を呼び出してG-Bufferをレンダーターゲットからアンバインドしてからでないと、ライティングパスでSRVとして読み込むことはできない点に注意が必要です。
+
+### 2. ビューポート・レンダーターゲットの完全な退避復元
+
+`Activate()` / `Deactivate()`のペアで呼び出し前のビューポートとレンダーターゲットを退避・復元することで、G-Buffer書き込みが他の描画パス（UIやデバッグ描画）に影響を与えないようにしています。
+
+<Aside type="note">
+  G-Bufferは、後段のDeferred LightingパスとPost_Process_Manager::begin()内でのシャドウマップ合成の両方から参照されます。
+</Aside>
+
+<Aside type="caution">
+  4枚のRTを持つため、解像度やアンチエイリアシング（現状MSAA未対応）を変更する際はメモリコストの増大に注意してください。
+</Aside>

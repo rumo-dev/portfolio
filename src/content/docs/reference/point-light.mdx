@@ -1,0 +1,308 @@
+---
+title: "技術解説：Point Light（点光源）"
+description: StructuredBufferとフラスタムカリングによる、電球やランプのような点光源のリアルタイム実装。
+sidebar:
+  order: 21
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import ModalVideo from "../../../components/ModalVideo.astro";
+import ImageGrid from "../../../components/ImageGrid.astro";
+import dummyImg from "../../../assets/dummy.jpg";
+
+ランプや電球のような、あらゆる方向に均等に光を放つ光源を表現するため、AtmosFioreでは **Point Light（点光源）** を実装しています。CPU側でフラスタムカリングを行った上でStructuredBufferにパッキングし、Deferred Lightingパスで動的な光源数のループ処理を行う設計です。
+
+---
+
+## 📐 Point Lightの基本概念
+
+点光源は「位置」「影響半径」「強度」「色」という最小限のパラメータのみを持ち、半径内では距離の2乗に近い滑らかな減衰で光が弱まります。
+
+### GPU転送用データ構造
+
+```cpp
+struct PointLightGpu
+{
+    dx::XMFLOAT3 position;
+    float        radius;
+
+    dx::XMFLOAT3 color;
+    float        intensity;
+};
+```
+
+32バイトのコンパクトな構造体としてGPUに転送されるため、StructuredBufferに数百〜千個規模の光源を効率よく保持できます。
+
+---
+
+## 🎥 デモ
+
+<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+
+<ImageGrid images={[dummyImg.src]} />
+
+---
+
+## 💻 C++実装
+
+```cpp
+class PointLight : public LightBase
+{
+public:
+	PointLight()
+	{
+		position = { 0, 0, 0 };
+		radius = 10.0f;
+		intensity = 1.0f;
+		diffuseColor = { 1.0f, 1.0f, 1.0f, 1.0f };
+	}
+
+	struct PointLightGpu
+	{
+		dx::XMFLOAT3 position;
+		float radius;
+
+		dx::XMFLOAT3 color;
+		float intensity;
+	};
+
+	dx::XMFLOAT3 position;
+	float radius;
+	float intensity;
+	float padding[3] = {};
+
+	void update() override {}
+
+	void draw_imgui(const char* label = "PointLight") override
+	{
+		if (ImGui::TreeNode(label))
+		{
+			ImGui::ColorEdit3("Diffuse", (float*)&diffuseColor);
+			ImGui::DragFloat3("Position", (float*)&position, 0.1f);
+			ImGui::DragFloat("Radius", &radius, 0.1f, 0.1f, 200.0f);
+			ImGui::DragFloat("Intensity", &intensity, 0.01f, 0.0f, 10.0f);
+			ImGui::TreePop();
+		}
+	}
+};
+```
+
+### 管理クラス：フラスタムカリング付きGPUアップロード
+
+```cpp
+/**
+ * @brief ポイントライト管理クラス
+ *
+ * @remark
+ * - 定数バッファを用いてシェーダーへライト情報を渡す
+ * - デバッグ用に球体で可視化可能
+ *
+ * @warning
+ * - 定数バッファサイズ制限（D3D11: 最大64KB）に注意
+ * - ライト数が増えるとパフォーマンスに影響する
+ */
+class PointLightManager
+{
+public:
+	void initialize(ID3D11Device* device);
+	void add_light(const PointLight& light);
+	void add_light(dx::XMFLOAT3 position, float radius, float intensity, dx::XMFLOAT4 diffuseColor);
+	void remove_light(int index);
+	std::vector<PointLight>& get_lights();
+
+	void update();
+	void draw_imgui();
+	void upload_to_gpu(ID3D11DeviceContext* ctx);
+	void debug_render();
+
+	ID3D11ShaderResourceView* get_srv() const { return _sbLightsSRV.Get(); }
+	ID3D11Buffer* get_cb() const { return _cbLightCount.Get(); }
+
+private:
+	std::vector<PointLight> _lights;
+	int _visible_count = 0;
+
+	Microsoft::WRL::ComPtr<ID3D11Buffer>             _sbLights;      // StructuredBuffer本体
+	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> _sbLightsSRV;
+	Microsoft::WRL::ComPtr<ID3D11Buffer>             _cbLightCount;  // ライト数
+
+	void create_structured_buffer(ID3D11Device* device);
+	void create_light_count_buffer(ID3D11Device* device);
+
+	Debug_Sphere* _debug_sphere = nullptr;
+};
+```
+
+```cpp
+void PointLightManager::upload_to_gpu(ID3D11DeviceContext* ctx)
+{
+	// 1. フラスタムカリング：カメラ視錐台と交差する球（position, radius）のみを対象にする
+	bool enable_culling = false;
+	Frustum camera_frustum{};
+	auto camera_base = CameraManager::instance().get_active_camera();
+	if (camera_base)
+	{
+		const Camera& camera = camera_base->get_camera();
+		camera_frustum = ExtractFrustum(camera.view, camera.projection);
+		enable_culling = true;
+	}
+
+	std::vector<PointLight::PointLightGpu> gpuLights;
+	gpuLights.reserve(_lights.size());
+
+	for (auto& l : _lights)
+	{
+		if (enable_culling)
+		{
+			DirectX::XMVECTOR pos = DirectX::XMLoadFloat3(&l.position);
+			if (!SphereIntersectsFrustum(camera_frustum, pos, l.radius))
+				continue; // 視錐台外のライトはGPUに転送しない
+		}
+
+		PointLight::PointLightGpu g{};
+		g.position  = l.position;
+		g.radius    = l.radius;
+		g.color     = { l.diffuseColor.x, l.diffuseColor.y, l.diffuseColor.z };
+		g.intensity = l.intensity;
+		gpuLights.push_back(g);
+	}
+
+	_visible_count = static_cast<int>(gpuLights.size());
+	if (gpuLights.size() > 1024) gpuLights.resize(1024); // 最大1024個にクランプ
+
+	// 2. Map/Unmapによる動的StructuredBufferへの書き込み
+	D3D11_MAPPED_SUBRESOURCE mappedResource;
+	ctx->Map(_sbLights.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+	memcpy(mappedResource.pData, gpuLights.data(), sizeof(PointLight::PointLightGpu) * gpuLights.size());
+	ctx->Unmap(_sbLights.Get(), 0);
+
+	// 3. ライト数を定数バッファへ、ライト本体をt8のSRVへバインド
+	UINT numLights = static_cast<UINT>(gpuLights.size());
+	ctx->UpdateSubresource(_cbLightCount.Get(), 0, nullptr, &numLights, 0, 0);
+	ctx->PSSetShaderResources(8, 1, _sbLightsSRV.GetAddressOf());
+	ctx->PSSetConstantBuffers(4, 1, _cbLightCount.GetAddressOf());
+}
+```
+
+### StructuredBufferの生成
+
+```cpp
+void PointLightManager::create_structured_buffer(ID3D11Device* device)
+{
+	D3D11_BUFFER_DESC desc{};
+	desc.ByteWidth = sizeof(PointLight::PointLightGpu) * 1024; // 最大1024個
+	desc.Usage = D3D11_USAGE_DYNAMIC;                          // CPUから毎フレームMap/Unmap
+	desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+	desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	desc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+	desc.StructureByteStride = sizeof(PointLight::PointLightGpu);
+
+	device->CreateBuffer(&desc, nullptr, _sbLights.GetAddressOf());
+
+	D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+	srvDesc.Format = DXGI_FORMAT_UNKNOWN; // StructuredBufferはUNKNOWN指定
+	srvDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+	srvDesc.Buffer.ElementWidth = sizeof(PointLight::PointLightGpu);
+	srvDesc.Buffer.NumElements = 1024;
+
+	device->CreateShaderResourceView(_sbLights.Get(), &srvDesc, _sbLightsSRV.GetAddressOf());
+}
+```
+
+---
+
+## 💻 HLSL実装
+
+```hlsl
+// point_light.hlsli
+struct PointLight_GPU
+{
+    float3 position;
+    float  radius;
+
+    float3 color;
+    float  intensity;
+};
+
+StructuredBuffer<PointLight_GPU> pointLights : register(t8);
+cbuffer CB_PointLightCount : register(b4)
+{
+    uint numPointLights;
+    uint padding[3];
+};
+```
+
+```hlsl
+// deferred_lighting_ps.hlsl（抜粋）
+for (int i = 0; i < numPointLights; ++i)
+{
+    if (pointLights[i].intensity <= 0.0f || pointLights[i].radius <= 0.0f)
+        continue;
+
+    float3 light_vector = pointLights[i].position - position;
+    float dist = length(light_vector);
+    if (dist >= pointLights[i].radius)
+        continue;
+
+    float3 Lp = light_vector / max(dist, 0.0001f);
+    float pointNoL = max(0.0f, dot(N, Lp));
+    if (pointNoL <= 0.0f)
+        continue;
+
+    // 半径ベースの滑らかな減衰（逆二乗則の簡易近似）
+    float attenuation = pow(max(0.0f, 1.0f - (dist / pointLights[i].radius)), 2.0f);
+    float3 pointLi = pointLights[i].color * pointLights[i].intensity * attenuation;
+
+    float3 H = normalize(V + Lp);
+    float NoH = max(0.0f, dot(N, H));
+    float HoV = max(0.0f, dot(H, V));
+    float shadow = SamplePointLightShadow(point_shadow_front_map, point_shadow_back_map, position, N, Lp, i);
+
+    diffuse  += pointLi * shadow * pointNoL * brdf_lambertian(f0, f90, c_diff, HoV);
+    specular += pointLi * shadow * pointNoL * brdf_specular_ggx(f0, f90, alpha_roughness, HoV, pointNoL, NoV, NoH);
+}
+```
+
+---
+
+## 🎨 処理の詳細
+
+### 1. 半径ベースの減衰モデル
+
+物理的に正確な逆二乗則（`1/dist²`）は距離0付近で発散してしまうため、AtmosFioreでは`pow(saturate(1 - dist/radius), 2.0)`という、指定した半径でちょうど0まで滑らかに減衰するモデルを採用しています。これにより、アーティストが「この光は半径10mまで届く」と直感的に設定できます。
+
+### 2. フラスタムカリングによる転送量削減
+
+`SphereIntersectsFrustum`によりカメラ視錐台に入っていない光源はGPUへ転送されず、シェーダー側のループ回数（`numPointLights`）にも含まれません。シーン全体に多数のライトが存在していても、実際に画面に映る範囲の光源のみが計算コストに影響します。
+
+### 3. 2枚のシャドウマップによる全方位シャドウ
+
+ポイントライトは本来キューブマップ6面のシャドウが必要ですが、AtmosFioreは`point_shadow_front_map` / `point_shadow_back_map`という前後2枚の深度マップで簡略化し、`SamplePointLightShadow`関数内でライト方向に応じて適切な面をサンプリングしています。
+
+---
+
+## 🔧 実装のポイント
+
+### 1. Dynamic StructuredBufferによる毎フレーム更新
+
+`D3D11_USAGE_DYNAMIC` + `D3D11_CPU_ACCESS_WRITE`のバッファに対して`Map(D3D11_MAP_WRITE_DISCARD)`で毎フレーム上書きすることで、CPU側でライトを自由に追加・削除・移動しても、GPU側は常に最新のライト配列を参照できます。
+
+### 2. 最大1024個のハードリミット
+
+```cpp
+if (gpuLights.size() > 1024) gpuLights.resize(1024);
+```
+
+StructuredBufferのサイズを固定（1024要素）にしているため、それを超えるライトが存在する場合は先頭1024個のみが転送されます。将来的にはタイルド/クラスタードライティングへの拡張余地としてコメントされています。
+
+### 3. デバッグ球によるライト範囲の可視化
+
+`Debug_Sphere`を使い、各ポイントライトの位置に半径`radius`の球をワイヤーフレームで描画することで、影響範囲をエディタ上で直感的に確認できるようにしています。
+
+<Aside type="note">
+  ポイントライトのStructuredBufferはレジスタ`t8`、ライト数の定数バッファは`b4`にバインドされ、Deferred Lightingパスから参照されます。
+</Aside>
+
+<Aside type="caution">
+  ライト数が多い場合、ピクセルシェーダー内の光源ループがボトルネックになりやすいため、フラスタムカリングに加えてタイルド/クラスタードライティングの導入余地があります（現状は未実装）。
+</Aside>
