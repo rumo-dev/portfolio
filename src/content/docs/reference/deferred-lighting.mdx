@@ -2,13 +2,11 @@
 title: "技術解説：Deferred Lighting（ディファードライティング）"
 description: G-Bufferを読み出し、Directional/Point/Spot/Area Lightを含む全光源を1パスで合成するディファードライティングパイプライン。
 sidebar:
-  order: 19
+  order: 4
 ---
 
 import { Aside } from "@astrojs/starlight/components";
 import ModalVideo from "../../../components/ModalVideo.astro";
-import ImageGrid from "../../../components/ImageGrid.astro";
-import dummyImg from "../../../assets/dummy.jpg";
 
 複数光源を効率的に処理するため、AtmosFioreでは **Deferred Lighting（ディファードライティング）** を採用しています。ジオメトリパスで書き出したG-Bufferを読み出し、ディレクショナル・ポイント・スポット・エリアという4種類の光源とIBL（Image-Based Lighting）を、フルスクリーン1パスで物理ベースBRDF（GGX + Lambertian）により合成します。
 
@@ -31,8 +29,6 @@ import dummyImg from "../../../assets/dummy.jpg";
 ## 🎥 デモ
 
 <ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
-
-<ImageGrid images={[dummyImg.src]} />
 
 ---
 

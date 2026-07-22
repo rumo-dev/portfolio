@@ -2,13 +2,11 @@
 title: "技術解説：Directional Light（ディレクショナルライト）"
 description: 太陽光などの平行光源を、時刻連動のday-nightサイクルとピッチ・ヨーの手動操作で制御するディレクショナルライトの実装。
 sidebar:
-  order: 23
+  order: 7
 ---
 
 import { Aside } from "@astrojs/starlight/components";
 import ModalVideo from "../../../components/ModalVideo.astro";
-import ImageGrid from "../../../components/ImageGrid.astro";
-import dummyImg from "../../../assets/dummy.jpg";
 
 太陽光のように、シーン全体に対して常に同じ方向から降り注ぐ平行光を表現するため、AtmosFioreでは **Directional Light（ディレクショナルライト）** を実装しています。単なる光源パラメータの保持にとどまらず、時刻に応じて自動的に太陽の位置が変化するday-nightサイクルと、手動でのピッチ・ヨー操作を両立させているのが特徴です。
 
@@ -28,8 +26,6 @@ import dummyImg from "../../../assets/dummy.jpg";
 ## 🎥 デモ
 
 <ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
-
-<ImageGrid images={[dummyImg.src]} />
 
 ---
 

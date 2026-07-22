@@ -2,13 +2,13 @@
 title: "技術解説：Exposure（T値ベース露出）"
 description: T値・シャッタースピード・ISOから物理的なEV100を算出し、HDRバッファに線形露出スケールを適用するポストエフェクト。
 sidebar:
-  order: 13
+  order: 15
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import ModalVideo from "../../../components/ModalVideo.astro";
-import ImageGrid from "../../../components/ImageGrid.astro";
+import ImgComparison from "../../../components/ImgComparison.astro";
 import dummyImg from "../../../assets/dummy.jpg";
+import houstonImg from "../../../assets/houston.webp";
 
 実カメラの露出計算を再現するため、AtmosFioreでは **Exposure（T値ベース露出）** を実装しています。写真撮影で使われるT値・シャッタースピード・ISO感度から標準的な **EV100** を算出し、シーンのHDRカラーに線形な露出スケールを適用する、トーンマッピングとは独立した単独ポストエフェクトです。
 
@@ -27,11 +27,16 @@ import dummyImg from "../../../assets/dummy.jpg";
 
 ---
 
-## 🎥 デモ
+## 🎚️ 比較デモ
 
-<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+露出調整の前後をスライダーで比較できます。
 
-<ImageGrid images={[dummyImg.src]} isComparison={true} />
+<ImgComparison
+  leftImage={dummyImg.src}
+  rightImage={houstonImg.src}
+  altLeft="露出調整前"
+  altRight="露出調整後"
+/>
 
 ---
 

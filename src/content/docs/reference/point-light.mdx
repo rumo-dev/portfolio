@@ -2,13 +2,13 @@
 title: "技術解説：Point Light（点光源）"
 description: StructuredBufferとフラスタムカリングによる、電球やランプのような点光源のリアルタイム実装。
 sidebar:
-  order: 21
+  order: 5
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import ModalVideo from "../../../components/ModalVideo.astro";
-import ImageGrid from "../../../components/ImageGrid.astro";
+import ImgComparison from "../../../components/ImgComparison.astro";
 import dummyImg from "../../../assets/dummy.jpg";
+import houstonImg from "../../../assets/houston.webp";
 
 ランプや電球のような、あらゆる方向に均等に光を放つ光源を表現するため、AtmosFioreでは **Point Light（点光源）** を実装しています。CPU側でフラスタムカリングを行った上でStructuredBufferにパッキングし、Deferred Lightingパスで動的な光源数のループ処理を行う設計です。
 
@@ -35,11 +35,16 @@ struct PointLightGpu
 
 ---
 
-## 🎥 デモ
+## 🎚️ 比較デモ
 
-<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+点灯前後をスライダーで比較できます。
 
-<ImageGrid images={[dummyImg.src]} />
+<ImgComparison
+  leftImage={dummyImg.src}
+  rightImage={houstonImg.src}
+  altLeft="消灯"
+  altRight="点灯"
+/>
 
 ---
 

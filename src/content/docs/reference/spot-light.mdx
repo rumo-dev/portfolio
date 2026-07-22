@@ -2,13 +2,13 @@
 title: "技術解説：Spot Light（スポットライト）"
 description: 内側・外側角度によるコーン状の減衰を持つ、懐中電灯やスポットライトのような方向性光源の実装。
 sidebar:
-  order: 22
+  order: 6
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import ModalVideo from "../../../components/ModalVideo.astro";
-import ImageGrid from "../../../components/ImageGrid.astro";
+import ImgComparison from "../../../components/ImgComparison.astro";
 import dummyImg from "../../../assets/dummy.jpg";
+import houstonImg from "../../../assets/houston.webp";
 
 懐中電灯やスポットライトのような、特定方向に円錐状の光を放つ光源を表現するため、AtmosFioreでは **Spot Light（スポットライト）** を実装しています。Point Lightの距離減衰に加え、内側角度・外側角度による滑らかなコーン状の減衰を組み合わせています。
 
@@ -39,11 +39,16 @@ struct SpotLightGpu
 
 ---
 
-## 🎥 デモ
+## 🎚️ 比較デモ
 
-<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+点灯前後をスライダーで比較できます。
 
-<ImageGrid images={[dummyImg.src]} />
+<ImgComparison
+  leftImage={dummyImg.src}
+  rightImage={houstonImg.src}
+  altLeft="消灯"
+  altRight="点灯"
+/>
 
 ---
 

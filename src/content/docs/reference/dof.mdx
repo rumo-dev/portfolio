@@ -2,13 +2,13 @@
 title: "技術解説：Depth of Field（被写界深度）"
 description: AMD GDC 2017「Cinematic Depth of Field」のFast Filter Spreading（散乱方式）をCompute Shaderで実装した被写界深度。
 sidebar:
-  order: 12
+  order: 14
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import ModalVideo from "../../../components/ModalVideo.astro";
-import ImageGrid from "../../../components/ImageGrid.astro";
+import ImgComparison from "../../../components/ImgComparison.astro";
 import dummyImg from "../../../assets/dummy.jpg";
+import houstonImg from "../../../assets/houston.webp";
 
 AtmosFioreの **Depth of Field（被写界深度）** は、AMD GDC 2017「Cinematic Depth of Field」（Hillesland & Skelton）で紹介された **Fast Filter Spreading（FFS / 真の散乱方式）** をCompute Shaderで忠実に実装したものです。一般的なGatherベースのボケ近似とは異なり、各ピクセルが自身のCoC（Circle of Confusion）を周囲に「撒く」ことで、フィルタサイズに対してO(1)のコストで巨大なボケ表現を実現しています。
 
@@ -42,11 +42,16 @@ color_map + depth_map (GBuffer)
 
 ---
 
-## 🎥 デモ
+## 🎚️ 比較デモ
 
-<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+被写界深度の有無をスライダーで比較できます。
 
-<ImageGrid images={[dummyImg.src]} isComparison={true} />
+<ImgComparison
+  leftImage={dummyImg.src}
+  rightImage={houstonImg.src}
+  altLeft="被写界深度オフ"
+  altRight="被写界深度オン"
+/>
 
 ---
 

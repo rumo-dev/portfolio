@@ -2,13 +2,11 @@
 title: "技術解説：Sky（大気散乱・プロシージャルスカイ）"
 description: レイマーチングによる大気散乱シミュレーションと、雲・星・オーロラをプロシージャルに合成するスカイレンダリング。
 sidebar:
-  order: 17
+  order: 12
 ---
 
 import { Aside } from "@astrojs/starlight/components";
 import ModalVideo from "../../../components/ModalVideo.astro";
-import ImageGrid from "../../../components/ImageGrid.astro";
-import dummyImg from "../../../assets/dummy.jpg";
 
 窓の外に広がる空を描くため、AtmosFioreでは **Sky** をポストエフェクトとして実装しています。テクスチャに頼らず、レイリー散乱・ミー散乱に基づく大気散乱シミュレーション、FBMノイズによる雲、そしてプロシージャルな星・オーロラをすべてシェーダー内でリアルタイム生成します。
 
@@ -30,8 +28,6 @@ import dummyImg from "../../../assets/dummy.jpg";
 ## 🎥 デモ
 
 <ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
-
-<ImageGrid images={[dummyImg.src]} />
 
 ---
 

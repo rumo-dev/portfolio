@@ -2,13 +2,13 @@
 title: "技術解説：Area Light（LTC面光源）"
 description: LTC（Linearly Transformed Cosines）による、矩形・円形・球形の面光源をリアルタイムに正確積分するエリアライトの実装。
 sidebar:
-  order: 24
+  order: 8
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import ModalVideo from "../../../components/ModalVideo.astro";
-import ImageGrid from "../../../components/ImageGrid.astro";
+import ImgComparison from "../../../components/ImgComparison.astro";
 import dummyImg from "../../../assets/dummy.jpg";
+import houstonImg from "../../../assets/houston.webp";
 
 窓やパネルライトのような「面」を持つ光源を物理的に正確に表現するため、AtmosFioreでは **Area Light（面光源）** を **LTC（Linearly Transformed Cosines）** という手法で実装しています。矩形・円形（ディスク）・球形の3形状に対応し、テクスチャルックアップテーブルを使わないTextureless近似で軽量に動作します。
 
@@ -51,11 +51,16 @@ struct AreaLightGpu
 
 ---
 
-## 🎥 デモ
+## 🎚️ 比較デモ
 
-<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+点灯前後をスライダーで比較できます。
 
-<ImageGrid images={[dummyImg.src]} />
+<ImgComparison
+  leftImage={dummyImg.src}
+  rightImage={houstonImg.src}
+  altLeft="消灯"
+  altRight="点灯"
+/>
 
 ---
 

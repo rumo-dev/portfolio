@@ -2,13 +2,13 @@
 title: "技術解説：Chromatic Aberration（色収差）"
 description: 波長ごとの屈折率の違いによるRGBチャンネルのズレを再現する、物理ベース連動の色収差ポストエフェクト。
 sidebar:
-  order: 14
+  order: 16
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import ModalVideo from "../../../components/ModalVideo.astro";
-import ImageGrid from "../../../components/ImageGrid.astro";
+import ImgComparison from "../../../components/ImgComparison.astro";
 import dummyImg from "../../../assets/dummy.jpg";
+import houstonImg from "../../../assets/houston.webp";
 
 現実のレンズでは波長によって屈折率が異なるため、RGBチャンネルが画面端に向かって放射状にズレる「横方向色収差」が発生します。AtmosFioreの **Chromatic Aberration** は、この現象をカメラの焦点距離・F値と連動させて物理的にもっともらしく再現します。
 
@@ -26,11 +26,16 @@ import dummyImg from "../../../assets/dummy.jpg";
 
 ---
 
-## 🎥 デモ
+## 🎚️ 比較デモ
 
-<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+色収差の有無をスライダーで比較できます。
 
-<ImageGrid images={[dummyImg.src]} isComparison={true} />
+<ImgComparison
+  leftImage={dummyImg.src}
+  rightImage={houstonImg.src}
+  altLeft="色収差オフ"
+  altRight="色収差オン"
+/>
 
 ---
 

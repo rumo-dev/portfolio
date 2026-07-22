@@ -2,13 +2,13 @@
 title: "技術解説：Lens Distortion（レンズ歪曲）"
 description: ブラウン–コンラディモデルのk1項による樽型・糸巻き型歪みを再現する、FoV連動のレンズ歪曲ポストエフェクト。
 sidebar:
-  order: 15
+  order: 17
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import ModalVideo from "../../../components/ModalVideo.astro";
-import ImageGrid from "../../../components/ImageGrid.astro";
+import ImgComparison from "../../../components/ImgComparison.astro";
 import dummyImg from "../../../assets/dummy.jpg";
+import houstonImg from "../../../assets/houston.webp";
 
 広角レンズ特有の樽型（barrel）歪みや、望遠レンズの糸巻き型（pincushion）歪みを再現するため、AtmosFioreでは **Lens Distortion** を実装しています。カメラ較正で広く使われる **ブラウン–コンラディモデル** の主歪曲係数（k1）を用い、視野角（FoV）と連動して自動的に歪み量を調整します。
 
@@ -27,11 +27,16 @@ r_d = r_u * (1 + k1 * r_u^2)
 
 ---
 
-## 🎥 デモ
+## 🎚️ 比較デモ
 
-<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+レンズ歪曲の有無をスライダーで比較できます。
 
-<ImageGrid images={[dummyImg.src]} isComparison={true} />
+<ImgComparison
+  leftImage={dummyImg.src}
+  rightImage={houstonImg.src}
+  altLeft="歪曲なし"
+  altRight="歪曲あり"
+/>
 
 ---
 

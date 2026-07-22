@@ -1,0 +1,205 @@
+---
+title: "技術解説：Audio Engine（オーディオエンジン）"
+description: XAudio2 / X3DAudioによるBGM・SEの多重再生と、JSON管理のエフェクトチェーン・3D空間オーディオを実装したオーディオシステム。
+sidebar:
+  order: 22
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import ModalVideo from "../../../components/ModalVideo.astro";
+
+ゲーム内のBGM・SE再生を一元管理するため、AtmosFioreでは **XAudio2 / X3DAudio** ベースの `AudioSystem` を実装しています。音源をキー名でマップ登録して再生する疎結合な設計に加え、リバーブ・エコー・EQなどのエフェクトチェーンをJSONで管理し、imnodesによるノードグラフGUIでリアルタイム編集できるのが特徴です。
+
+---
+
+## 📐 Audio Engineの基本概念
+
+`AudioSystem`は、レンダリングパイプラインとは独立したシングルトンとして動作し、毎フレームの`Update()`呼び出しで3D音源のパン・減衰・ドップラー効果を再計算します。音源データとエフェクトチェーンは実行時にJSONから読み込まれ、ホットリロードにも対応しています。
+
+### 音源登録とエフェクトチェーンの分離設計
+
+```cpp
+// 音源登録情報：どのファイルを、どのエフェクトチェーンで鳴らすか
+struct AudioClipInfo
+{
+    std::string key;          // 登録キー名（"bgm_field" など）
+    std::string relativePath; // baseDir からの相対パス
+    bool        isStreaming = false;
+    float       defaultVolume = 1.0f;
+    float       defaultPitch  = 1.0f;
+    std::string effectChain;  // 適用するエフェクトチェーン名（空なら無し）
+};
+
+// 再生時オプション：登録情報を上書きするランタイムパラメータ
+struct AudioPlayParam
+{
+    float volume = 1.0f;
+    float pitch  = 1.0f;
+    bool  loop   = false;
+    bool  spatialize = false;  // 3D空間定位を使うか
+    float posX = 0.0f, posY = 0.0f, posZ = 0.0f;
+    std::string overrideEffectChain;
+};
+```
+
+音源（何を鳴らすか）とエフェクトチェーン（どう加工するか）を分離することで、同じ効果音に異なるリバーブ設定を切り替えて適用したり、BGMごとに異なる空間の響きを持たせたりすることが、コード変更なしにJSON編集だけで可能になっています。
+
+---
+
+## 🎥 デモ
+
+<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+
+---
+
+## 💻 C++実装：BGM/SE再生API
+
+```cpp
+class AudioSystem
+{
+public:
+	static AudioSystem& instance();
+
+	bool Initialize(const std::string& jsonPath,
+		const std::string& baseDir = "Assets/Audio/",
+		UINT32             maxVoices = 32);
+
+	void Update(); // 毎フレーム呼び出し：3D音源更新、停止ボイス回収
+
+	bool RegisterClip(const std::string& key,
+		const std::string& relativePath,
+		float              defaultVolume = 1.0f,
+		float              defaultPitch = 1.0f,
+		const std::string& effectChain = "");
+
+	int PlayBGM(const std::string& key, const AudioPlayParam& param = {});
+	int PlaySE (const std::string& key, const AudioPlayParam& param = {});
+
+	void Stop(int voiceId, float fadeOutSec = 0.0f);
+	void StopAllBGM(float fadeOutSec = 0.0f);
+	void StopAllSE();
+
+	void SetListenerPosition(float x, float y, float z);
+	void SetListenerOrientation(float fx, float fy, float fz, float ux, float uy, float uz);
+
+	void RegisterEffectChain(const AudioEffectChain& chain);
+	void DrawEffectGraphEditor(const std::string& chainName = "");
+
+private:
+	Microsoft::WRL::ComPtr<IXAudio2>  m_pXAudio2;
+	IXAudio2MasteringVoice*           m_pMasterVoice = nullptr;
+	IXAudio2SubmixVoice*              m_pBGMSubmix = nullptr;
+	IXAudio2SubmixVoice*              m_pSESubmix  = nullptr;
+	X3DAUDIO_HANDLE                   m_x3dInstance = {};
+	X3DAUDIO_LISTENER                 m_listener = {};
+
+	std::unordered_map<std::string, AudioClipInfo> m_clipRegistry;
+	std::unordered_map<int, PlayingVoice>          m_voices;
+	std::unordered_map<std::string, AudioEffectChain> m_effectChains;
+};
+```
+
+BGM/SEはそれぞれ専用のサブミックスボイス（`m_pBGMSubmix` / `m_pSESubmix`）に出力されるため、`SetBGMMasterVolume()` / `SetSEMasterVolume()` でカテゴリごとに一括音量調整できます。
+
+---
+
+## 💻 C++実装：X3DAudioによる3D空間定位
+
+```cpp
+void AudioSystem::Update3DAudio(int /*voiceId*/, PlayingVoice& voice)
+{
+	// ダングリングポインタ対策：計算直前にベクターの先頭アドレスを再設定
+	voice.dspSettings.pMatrixCoefficients = voice.matrixCoef.data();
+
+	DWORD flags =
+		X3DAUDIO_CALCULATE_MATRIX |
+		X3DAUDIO_CALCULATE_DOPPLER |
+		X3DAUDIO_CALCULATE_LPF_DIRECT;
+
+	// リスナーと音源（エミッタ）の位置関係からパン行列・ドップラー係数・LPF係数を算出
+	X3DAudioCalculate(m_x3dInstance, &m_listener, &voice.emitter, flags, &voice.dspSettings);
+
+	IXAudio2Voice* pDestinationVoice = voice.isBGM ? m_pBGMSubmix : m_pSESubmix;
+
+	voice.pSourceVoice->SetOutputMatrix(
+		pDestinationVoice,
+		voice.dspSettings.SrcChannelCount,
+		voice.dspSettings.DstChannelCount,
+		voice.dspSettings.pMatrixCoefficients);
+
+	voice.pSourceVoice->SetFrequencyRatio(voice.dspSettings.DopplerFactor);
+
+	// 距離減衰に応じたローパスフィルタ（遠い音源ほど高音域が減衰）
+	XAUDIO2_FILTER_PARAMETERS filter;
+	filter.Type = LowPassFilter;
+	filter.Frequency = voice.dspSettings.LPFDirectCoefficient;
+	filter.OneOverQ = 1.0f;
+	voice.pSourceVoice->SetFilterParameters(&filter);
+}
+```
+
+---
+
+## 🔧 エフェクトチェーン（JSON管理）
+
+各音源には、リバーブ・エコー・EQ・フィルタなどを直列に接続した「エフェクトチェーン」を割り当てられます。チェーンの構成はJSONで永続化され、imnodesのノードグラフエディタから視覚的に編集できます。
+
+```json
+{
+  "clips": {
+    "bgm_field": {
+      "key": "bgm_field",
+      "relativePath": "BGM/field.wav",
+      "defaultVolume": 0.8,
+      "effectChain": "reverb_hall"
+    }
+  },
+  "effectChains": {
+    "reverb_hall": {
+      "name": "reverb_hall",
+      "nodes": [
+        { "nodeId": 1, "type": "Volume", "enabled": true, "param": { "volume": 0.9 } },
+        { "nodeId": 2, "type": "Reverb", "enabled": true,
+          "param": { "wetDryMix": 60.0, "roomSize": 0.8, "decayTime": 2.5 } }
+      ],
+      "links": [ { "linkId": 1, "fromNode": 1, "toNode": 2 } ]
+    }
+  }
+}
+```
+
+```cpp
+enum class AudioEffectType
+{
+    None = 0,
+    LowPassFilter, HighPassFilter,
+    Reverb,   // XAPO: ReverbEffect
+    Echo,     // XAPO: Echo
+    Equalizer,// XAPO: FXEQ
+    Volume, Pitch, Spatialize,
+};
+```
+
+---
+
+## 🎨 処理の詳細
+
+### 1. BGM/SEの多重再生とボイス管理
+
+`m_voices`は再生中のボイスをID付きマップで一元管理し、`CollectStoppedVoices()`が毎フレーム再生終了ボイスを自動回収します。これによりSEの同時多重再生数がXAudio2の上限（`maxVoices`）を超えないよう制御されます。
+
+### 2. XAPOエフェクトチェーンの動的適用
+
+リバーブ・エコー・EQはWindows標準のXAPO（Reverb/Echo/FXEQ）として`CreateSourceVoice()`時にチェーン順で適用され、ローパス/ハイパスフィルタはXAudio2のビルトインフィルタ（`SetFilterParameters`）で実現しています。
+
+### 3. imnodesによるノードグラフ編集
+
+`DrawEffectGraphEditor()`はImGui拡張のimnodesを用いて、エフェクトチェーンをノードとリンクのグラフとして可視化・編集します。編集結果はそのままJSONへシリアライズされ、次回起動時に復元されます。
+
+<Aside type="note">
+  エフェクトチェーンとノードグラフGUIはレンダリングパイプラインとは独立したサブシステムですが、Post_Process_Managerと同様に「JSON管理 + GUIによるリアルタイム編集」という設計思想を共有しています。
+</Aside>
+
+<Aside type="caution">
+  X3DAudioの計算はリスナー・エミッタの位置更新に依存するため、`SetListenerPosition()` / `SetListenerOrientation()`をカメラ更新と同じフレームで呼び出さないと定位がずれる点に注意が必要です。
+</Aside>
