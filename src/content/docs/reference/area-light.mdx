@@ -6,9 +6,10 @@ sidebar:
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import ImgComparison from "../../../components/ImgComparison.astro";
-import dummyImg from "../../../assets/dummy.jpg";
-import houstonImg from "../../../assets/houston.webp";
+import ImageGrid from '../../../components/ImageGrid.astro';
+import ImgComparison from '../../../components/ImgComparison.astro';
+import OnImage from "../../../assets/arealight_on.png";
+import OffImage from "../../../assets/arealight_off.png";
 
 窓やパネルライトのような「面」を持つ光源を物理的に正確に表現するため、AtmosFioreでは **Area Light（面光源）** を **LTC（Linearly Transformed Cosines）** という手法で実装しています。矩形・円形（ディスク）・球形の3形状に対応し、テクスチャルックアップテーブルを使わないTextureless近似で軽量に動作します。
 
@@ -53,13 +54,13 @@ struct AreaLightGpu
 
 ## 🎚️ 比較デモ
 
-点灯前後をスライダーで比較できます。
+Bloomの有無をスライダーで比較できます。
 
 <ImgComparison
-  leftImage={dummyImg.src}
-  rightImage={houstonImg.src}
-  altLeft="消灯"
-  altRight="点灯"
+  leftImage={OffImage.src}
+  rightImage={OnImage.src}
+  altLeft="Area Lightオフ"
+  altRight="Area Lightオン"
 />
 
 ---
