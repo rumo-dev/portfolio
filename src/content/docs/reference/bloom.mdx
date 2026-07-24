@@ -7,8 +7,8 @@ sidebar:
 
 import { Aside } from "@astrojs/starlight/components";
 import ImgComparison from "../../../components/ImgComparison.astro";
-import dummyImg from "../../../assets/dummy.jpg";
-import houstonImg from "../../../assets/houston.webp";
+import dummyImg from "../../../assets/dummy00.png";
+import houstonImg from "../../../assets/dummy01.png";
 
 HDRレンダリングされたシーンの高輝度部分を光源のようににじませて表現するため、AtmosFioreでは **Bloom** を実装しています。単純なぼかしではなく、複数解像度でのダウンサンプル・アップサンプルを組み合わせることで、広がりのある自然な発光を低コストで再現しています。
 
@@ -245,9 +245,11 @@ bloom_final->GenerateMips(immediate_context);
 `step(bloom_extraction_threshold, ...)` により、しきい値未満のピクセルは完全に0として扱われるため、Bloomは「明るい部分だけ」に選択的に発生します。
 
 <Aside type="note">
-  Bloomは他のポストエフェクトと同様にFullscreen Quadを使用したポストプロセス前提設計です。
+  Bloomは他のポストエフェクトと同様にFullscreen
+  Quadを使用したポストプロセス前提設計です。
 </Aside>
 
 <Aside type="caution">
-  入力SRV（`color_map`）は処理中にRTVとしてバインドしてはならず、同一リソースのSRV/RTV同時使用はDirectX 11の未定義動作となります。
+  入力SRV（`color_map`）は処理中にRTVとしてバインドしてはならず、同一リソースのSRV/RTV同時使用はDirectX
+  11の未定義動作となります。
 </Aside>

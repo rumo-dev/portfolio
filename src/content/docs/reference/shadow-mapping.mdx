@@ -7,8 +7,8 @@ sidebar:
 
 import { Aside } from "@astrojs/starlight/components";
 import ImgComparison from "../../../components/ImgComparison.astro";
-import dummyImg from "../../../assets/dummy.jpg";
-import houstonImg from "../../../assets/houston.webp";
+import dummyImg from "../../../assets/dummy00.png";
+import houstonImg from "../../../assets/dummy01.png";
 
 物体が光を遮ることで生まれる影を再現するため、AtmosFioreでは **Shadow Mapping** をライト種別ごとに実装しています。ディレクショナルライトには直交投影＋PCF（Percentage Closer Filtering）、ポイントライトにはキューブマップの代わりに軽量な **双放物面マッピング（Dual Paraboloid Mapping）** を採用し、さらに近距離のディテールを補う **スクリーンスペースコンタクトシャドウ** も備えています。
 
@@ -404,7 +404,8 @@ bool use_shadow = point_shadow_options.y > 0.0f && light_index == 0 && ...
 `deferred_lighting_ps.hlsl`では`shadow_spot.hlsli` / `shadow_area.hlsli`がインクルードされていますが、現状これらのファイルは空であり、スポットライトとエリアライトはシャドウを落とさず、光源計算（減衰・BRDF）のみが行われます。将来的な拡張ポイントです。
 
 <Aside type="note">
-  ディレクショナルシャドウマップは`b5`（ポイント用定数）とは別に、ライトView-Projection行列を`light_view_projection`としてシェーダー側に渡し、Deferred Lightingパスの`SampleDirectionalShadow`から参照されます。
+  ディレクショナルシャドウマップは`b5`（ポイント用定数）とは別に、ライトView-Projection行列を`light_view_projection`としてシェーダー側に渡し、Deferred
+  Lightingパスの`SampleDirectionalShadow`から参照されます。
 </Aside>
 
 <Aside type="caution">

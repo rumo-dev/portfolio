@@ -7,8 +7,8 @@ sidebar:
 
 import { Aside } from "@astrojs/starlight/components";
 import ImgComparison from "../../../components/ImgComparison.astro";
-import dummyImg from "../../../assets/dummy.jpg";
-import houstonImg from "../../../assets/houston.webp";
+import dummyImg from "../../../assets/dummy00.png";
+import houstonImg from "../../../assets/dummy01.png";
 
 Adaptationで露出調整済みのHDRカラーを最終的にディスプレイへ表示するため、AtmosFioreでは **Tone Mapping** を実装しています。ACES・Reinhard・AgX・GT（Uchimura）など、実に34種類のアルゴリズムを実行時に切り替えられるのが最大の特徴です。
 
@@ -215,9 +215,13 @@ float3 ToneMap_ReinhardExtended(float3 x)
 Tone Mappingは必ずAdaptation（自動露出）の後、パイプラインの最終段に配置されます。これより手前のすべてのエフェクトは線形HDR空間で処理され、Tone Mappingで初めてディスプレイ向けのSDR値に変換されます。
 
 <Aside type="note">
-  デバッグGUIでは `ImGui::Combo` で34種類のアルゴリズム名をリスト表示し、選択中のアルゴリズムに応じて関連パラメータ（GT / ReinhardExtended / Drago / Exposure / CustomCurveなど）のスライダーのみを表示します。
+  デバッグGUIでは `ImGui::Combo`
+  で34種類のアルゴリズム名をリスト表示し、選択中のアルゴリズムに応じて関連パラメータ（GT
+  / ReinhardExtended / Drago / Exposure /
+  CustomCurveなど）のスライダーのみを表示します。
 </Aside>
 
 <Aside type="caution">
-  Tone MappingをAdaptationより前段に配置すると、自動露出が正しく機能しません（露出調整はトーンマッピング前の線形HDR値に対して行う必要があるため）。
+  Tone
+  MappingをAdaptationより前段に配置すると、自動露出が正しく機能しません（露出調整はトーンマッピング前の線形HDR値に対して行う必要があるため）。
 </Aside>

@@ -7,8 +7,8 @@ sidebar:
 
 import { Aside } from "@astrojs/starlight/components";
 import ImgComparison from "../../../components/ImgComparison.astro";
-import dummyImg from "../../../assets/dummy.jpg";
-import houstonImg from "../../../assets/houston.webp";
+import dummyImg from "../../../assets/dummy00.png";
+import houstonImg from "../../../assets/dummy01.png";
 
 窓から差し込む環境光のバウンスを物理的に正しく表現するため、AtmosFioreでは **IBL（Image-Based Lighting）** を実装しています。HDR環境マップから事前計算した拡散IEM（Irradiance Environment Map）とスペキュラPMREM（Prefiltered Mipmapped Radiance Environment Map）、BRDF LUTの4テクスチャを用い、Split-Sum近似によってリアルタイムに環境光を積分します。
 
@@ -30,12 +30,12 @@ enum TextureType {
 };
 ```
 
-| テクスチャ | 内容 | 用途 |
-|---|---|---|
-| Environment | 元のHDR環境マップ | スカイボックス表示・反射の基礎データ |
-| Diffuse IEM | 全方位から入射する光を余弦加重積分した放射照度マップ | 拡散反射（Lambert）成分 |
-| Specular PMREM | Roughnessごとにミップレベルへ事前ブラーした鏡面環境マップ | 鏡面反射（GGX）成分 |
-| BRDF LUT (GGX) | NoVとRoughnessを軸にしたフレネル・幾何減衰の積分結果 | Split-Sum近似の第2項 |
+| テクスチャ     | 内容                                                      | 用途                                 |
+| -------------- | --------------------------------------------------------- | ------------------------------------ |
+| Environment    | 元のHDR環境マップ                                         | スカイボックス表示・反射の基礎データ |
+| Diffuse IEM    | 全方位から入射する光を余弦加重積分した放射照度マップ      | 拡散反射（Lambert）成分              |
+| Specular PMREM | Roughnessごとにミップレベルへ事前ブラーした鏡面環境マップ | 鏡面反射（GGX）成分                  |
+| BRDF LUT (GGX) | NoVとRoughnessを軸にしたフレネル・幾何減衰の積分結果      | Split-Sum近似の第2項                 |
 
 ---
 
@@ -169,7 +169,9 @@ float3 ibl_radiance_lambertian(float3 N, float3 V, float roughness, float3 diffu
 Specular PMREMはミップレベルごとに異なるRoughnessでプレフィルタされたキューブマップとして事前生成されており、実行時は`roughness * (ミップ数-1)`で対応するミップをサンプリングするだけで済みます。
 
 <Aside type="note">
-  IBLで使用するBase Color・Metallic・Roughness・F0のパラメータ導出については、[Physical Material](./pbr/)の記事を参照してください。
+  IBLで使用するBase
+  Color・Metallic・Roughness・F0のパラメータ導出については、[Physical
+  Material](./pbr/)の記事を参照してください。
 </Aside>
 
 <Aside type="caution">

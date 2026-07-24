@@ -7,8 +7,8 @@ sidebar:
 
 import { Aside } from "@astrojs/starlight/components";
 import ImgComparison from "../../../components/ImgComparison.astro";
-import dummyImg from "../../../assets/dummy.jpg";
-import houstonImg from "../../../assets/houston.webp";
+import dummyImg from "../../../assets/dummy00.png";
+import houstonImg from "../../../assets/dummy01.png";
 
 広角レンズ特有の樽型（barrel）歪みや、望遠レンズの糸巻き型（pincushion）歪みを再現するため、AtmosFioreでは **Lens Distortion** を実装しています。カメラ較正で広く使われる **ブラウン–コンラディモデル** の主歪曲係数（k1）を用い、視野角（FoV）と連動して自動的に歪み量を調整します。
 
@@ -184,5 +184,6 @@ Lens Distortionはパイプライン上、Chromatic Aberrationの直後・Vignet
 </Aside>
 
 <Aside type="caution">
-  k1の絶対値が大きすぎると画面端の情報が大きく失われるため、通常は[-0.5, 0.5]程度の範囲での調整を推奨します。
+  k1の絶対値が大きすぎると画面端の情報が大きく失われるため、通常は[-0.5,
+  0.5]程度の範囲での調整を推奨します。
 </Aside>

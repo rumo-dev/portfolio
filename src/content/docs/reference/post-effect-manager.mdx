@@ -7,7 +7,7 @@ sidebar:
 
 import { Aside, LinkCard, CardGrid, Card } from "@astrojs/starlight/components";
 import ImageGrid from "../../../components/ImageGrid.astro";
-import dummyImg from "../../../assets/dummy.jpg";
+import dummyImg from "../../../assets/dummy00.png";
 
 AtmosFioreでは、Deferred Lightingで生成されたHDRシーンカラーに対し、12種類のポストエフェクトを決められた順序で連鎖適用する **Post_Process_Manager** がレンダリングパイプラインの最終工程を担っています。各エフェクトは「前段の出力SRVを受け取り、自身の出力SRVを返す」というバケツリレー方式で疎結合に接続されており、エフェクトの追加・削除・順序変更が容易な設計になっています。
 
