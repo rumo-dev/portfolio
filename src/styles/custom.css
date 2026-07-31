@@ -187,3 +187,87 @@ tr:last-child td {
 
   object-fit: contain;
 }
+
+/* ============================================================
+   ページ切り替えアニメーション (View Transitions API)
+   ------------------------------------------------------------
+   種類の切り替えは src/components/Head.astro 内の
+   PAGE_TRANSITION_TYPE 定数を書き換えるだけでOK。
+   ('fade' / 'slide' / 'slide-up' / 'zoom')
+   ============================================================ */
+
+::view-transition-group(root) {
+  animation-duration: 0.45s;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* --- fade: フェードイン/アウト --- */
+html[data-page-transition='fade']::view-transition-old(root) {
+  animation-name: pt-fade-out;
+}
+html[data-page-transition='fade']::view-transition-new(root) {
+  animation-name: pt-fade-in;
+}
+
+/* --- slide: 左右にスライド --- */
+html[data-page-transition='slide']::view-transition-old(root) {
+  animation-name: pt-slide-out-left;
+}
+html[data-page-transition='slide']::view-transition-new(root) {
+  animation-name: pt-slide-in-right;
+}
+
+/* --- slide-up: 下からふわっとスライド --- */
+html[data-page-transition='slide-up']::view-transition-old(root) {
+  animation-name: pt-fade-out;
+  animation-duration: 0.3s;
+}
+html[data-page-transition='slide-up']::view-transition-new(root) {
+  animation-name: pt-slide-in-up;
+}
+
+/* --- zoom: 拡大縮小しながらクロスフェード --- */
+html[data-page-transition='zoom']::view-transition-old(root) {
+  animation-name: pt-zoom-out;
+}
+html[data-page-transition='zoom']::view-transition-new(root) {
+  animation-name: pt-zoom-in;
+}
+
+@keyframes pt-fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+@keyframes pt-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes pt-slide-out-left {
+  from { transform: translateX(0);   opacity: 1; }
+  to   { transform: translateX(-3%); opacity: 0; }
+}
+@keyframes pt-slide-in-right {
+  from { transform: translateX(3%); opacity: 0; }
+  to   { transform: translateX(0);  opacity: 1; }
+}
+@keyframes pt-slide-in-up {
+  from { transform: translateY(20px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+@keyframes pt-zoom-out {
+  from { transform: scale(1);     opacity: 1; }
+  to   { transform: scale(1.03);  opacity: 0; }
+}
+@keyframes pt-zoom-in {
+  from { transform: scale(0.97); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+
+/* アクセシビリティ: モーション低減設定を尊重 */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(root),
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none !important;
+  }
+}

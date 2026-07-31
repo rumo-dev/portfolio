@@ -16,6 +16,12 @@ export default defineConfig({
 			// 右側の目次（Table of Contents）をグローバルで非表示にする
 			tableOfContents: false,
 
+			// ページ切り替えアニメーション（View Transitions）を有効にするための Head 差し替え
+			// 種類の切り替えは src/components/Head.astro 内の PAGE_TRANSITION_TYPE で行う
+			components: {
+				Head: './src/components/Head.astro',
+			},
+
 			// 【最新仕様】配列型（[]）の中にリンクをオブジェクトとして格納します
 			social: [
 				{
