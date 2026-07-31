@@ -1,0 +1,109 @@
+---
+interface Props {
+  title: string;
+  description: string;
+  href: string;
+  thumbnail: string;
+  tags?: string[];
+}
+const { title, description, href, thumbnail, tags = [] } = Astro.props;
+---
+
+<a class="work-card not-content" href={href}>
+  <div class="work-card-thumb">
+    <img src={thumbnail} alt={title} loading="lazy" />
+  </div>
+  <div class="work-card-body">
+    <h3 class="work-card-title">{title}</h3>
+    <p class="work-card-desc">{description}</p>
+    {
+      tags.length > 0 && (
+        <div class="work-card-tags">
+          {tags.map((tag) => (
+            <span class="work-card-tag">{tag}</span>
+          ))}
+        </div>
+      )
+    }
+  </div>
+</a>
+
+<style>
+  .work-card {
+    display: flex;
+    flex-direction: column;
+    text-decoration: none;
+    color: inherit;
+    background: var(--sl-color-bg-card);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .work-card:hover {
+    border-color: var(--sl-color-accent);
+    box-shadow:
+      0 10px 30px -10px rgba(245, 158, 11, 0.15),
+      0 0 15px -3px rgba(245, 158, 11, 0.05);
+    transform: translateY(-4px);
+  }
+
+  .work-card-thumb {
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    background: #000;
+  }
+
+  .work-card-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.5s ease;
+  }
+
+  .work-card:hover .work-card-thumb img {
+    transform: scale(1.05);
+  }
+
+  .work-card-body {
+    padding: 1rem 1.2rem 1.3rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    flex: 1;
+  }
+
+  .work-card-title {
+    margin: 0;
+    font-size: 1.05rem;
+    color: var(--sl-color-text);
+  }
+
+  .work-card-desc {
+    margin: 0;
+    font-size: 0.88rem;
+    color: var(--sl-color-text-muted);
+    line-height: 1.5;
+    flex: 1;
+  }
+
+  .work-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.3rem;
+  }
+
+  .work-card-tag {
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid var(--sl-color-hairline);
+    color: var(--sl-color-accent-high);
+  }
+</style>

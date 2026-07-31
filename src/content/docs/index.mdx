@@ -6,6 +6,7 @@ sidebar:
 ---
 
 import { Card, CardGrid, Badge } from '@astrojs/starlight/components';
+import WorkCard from '../../components/WorkCard.astro';
 
 <div style="display: flex; align-items: center; gap: 2rem; margin-bottom: 2rem; flex-wrap: wrap;">
   <div style="width: 150px; height: 150px; border-radius: 50%; overflow: hidden; border: 3px solid var(--sl-color-accent); box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);">
@@ -22,6 +23,34 @@ import { Card, CardGrid, Badge } from '@astrojs/starlight/components';
       DirectX 11 / C++を用いたローレベルな描画基盤の実装から、ゲームロジックへの応用までを一気通貫で開発できます。
     </p>
   </div>
+</div>
+
+---
+
+## 作品一覧 (Works)
+
+<div class="work-cards-grid">
+  <WorkCard
+    title="AtmosFiore（個人制作 / Shader Demo）"
+    description="室内空間の空気感と光を支配する、DirectX 11 / C++ 自作カスタムシェーダープロジェクト。"
+    href="./guides/atmosfiore/"
+    thumbnail="https://img.youtube.com/vi/tFDzRpk-m1c/hqdefault.jpg"
+    tags={["個人制作", "DirectX 11", "C++", "HLSL"]}
+  />
+  <WorkCard
+    title="Coin Baller（チーム制作 / 3D Roguelike）"
+    description="スマートボールとピンボールの要素を融合した、3Dローグライクゲームの開発実績。"
+    href="./guides/coin-baller/"
+    thumbnail="https://img.youtube.com/vi/eAyFPevaKRA/hqdefault.jpg"
+    tags={["チーム開発", "DirectX 11", "C++"]}
+  />
+  <WorkCard
+    title="FIGAVOID（チーム制作 / 2D Roguelike）"
+    description="プレイヤー、エネミーを担当。GitHub Flowを使用した3人開発による2Dローグライクゲーム。"
+    href="./guides/figavoid/"
+    thumbnail="https://img.youtube.com/vi/RrdWjpoNi-s/hqdefault.jpg"
+    tags={["チーム開発", "DirectX 11", "C++"]}
+  />
 </div>
 
 ---

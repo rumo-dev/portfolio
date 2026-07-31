@@ -1,0 +1,27 @@
+---
+title: "404"
+description: "お探しのページは見つかりませんでした。"
+template: splash
+editUrl: false
+tableOfContents: false
+---
+
+import { LinkButton } from '@astrojs/starlight/components';
+
+<div style="text-align:center; padding: 3rem 1rem 2rem;">
+  <p style="font-size: 5.5rem; margin: 0; font-weight: 800; line-height: 1; color: var(--sl-color-accent); text-shadow: 0 0 25px rgba(245, 158, 11, 0.35);">
+    404
+  </p>
+  <p style="font-family: var(--__sl-font-mono, monospace); font-size: 1.1rem; margin-top: 1rem; color: var(--sl-color-text);">
+    Render Error: Geometry Not Found
+  </p>
+  <p style="color: var(--sl-color-text-muted); margin: 1.2rem auto 2rem; max-width: 32rem;">
+    お探しのページは移動したか、削除された可能性があります。<br />
+    URLをご確認いただくか、トップページからお探しください。
+  </p>
+
+  <div style="display:flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+    <LinkButton href="/portfolio/" icon="left-arrow">トップページに戻る</LinkButton>
+    <LinkButton href="/portfolio/guides/atmosfiore/" variant="secondary" icon="rocket">作品を見る</LinkButton>
+  </div>
+</div>

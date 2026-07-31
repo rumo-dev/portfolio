@@ -2,20 +2,20 @@
 // ページ切り替えアニメーション用の Head オーバーライド
 // Starlight 標準の Head に astro:transitions の <ClientRouter /> を追加し、
 // ページ遷移時に View Transitions API によるアニメーションが働くようにします。
-import type { Props } from '@astrojs/starlight/props';
-import StarlightHead from '@astrojs/starlight/components/Head.astro';
-import { ClientRouter } from 'astro:transitions';
+import type { Props } from "@astrojs/starlight/props";
+import StarlightHead from "@astrojs/starlight/components/Head.astro";
+import { ClientRouter } from "astro:transitions";
 
 // ▼▼▼ アニメーションの種類を切り替えたいときはここを書き換えるだけ ▼▼▼
 // 'fade'（フェード） | 'slide'（左右スライド） | 'slide-up'（下からスライド） | 'zoom'（拡大縮小）
-const PAGE_TRANSITION_TYPE = 'fade';
+const PAGE_TRANSITION_TYPE = "fade";
 // ▲▲▲ ここまで ▲▲▲
 ---
 
 <StarlightHead {...Astro.props}>
-	<slot />
+  <slot />
 </StarlightHead>
 <ClientRouter />
 <script define:vars={{ PAGE_TRANSITION_TYPE }} is:inline>
-	document.documentElement.dataset.pageTransition = PAGE_TRANSITION_TYPE;
+  document.documentElement.dataset.pageTransition = PAGE_TRANSITION_TYPE;
 </script>

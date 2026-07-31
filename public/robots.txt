@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://rumo-dev.github.io/portfolio/sitemap-index.xml
