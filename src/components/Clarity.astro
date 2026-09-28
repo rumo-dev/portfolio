@@ -1,0 +1,14 @@
+---
+// src/components/Clarity.astro
+---
+
+<script>
+  import Clarity from "@microsoft/clarity";
+
+  // "あなたのプロジェクトID" の部分を、Clarityの管理画面（Settings > Overview）から取得したIDに書き換えてください
+  const projectId = "yp8x5qzhc3";
+
+  if (projectId) {
+    Clarity.init(projectId);
+  }
+</script>
