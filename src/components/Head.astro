@@ -5,7 +5,8 @@
 import type { Props } from "@astrojs/starlight/props";
 import StarlightHead from "@astrojs/starlight/components/Head.astro";
 import { ClientRouter } from "astro:transitions";
-import Clarity from "./Clarity.astro"; // で作成したコンポーネントをインポート
+import Clarity from "./Clarity.astro";
+import GoogleAnalytics from "./GoogleAnalytics.astro";
 
 // ▼▼▼ アニメーションの種類を切り替えたいときはここを書き換えるだけ ▼▼▼
 // 'fade'（フェード） | 'slide'（左右スライド） | 'slide-up'（下からスライド） | 'zoom'（拡大縮小）
@@ -17,6 +18,7 @@ const PAGE_TRANSITION_TYPE = "fade";
   <slot />
 </StarlightHead>
 <ClientRouter />
+<GoogleAnalytics />
 <Clarity />
 {/* サイト全体でClarityが読み込まれるように配置 */}
 <script define:vars={{ PAGE_TRANSITION_TYPE }} is:inline>

@@ -1,0 +1,20 @@
+---
+// src/components/GoogleAnalytics.astro
+
+// "あなたの測定ID" の部分を、Googleアナリティクスから取得したID（G-から始まる文字列）に書き換えてください
+const measurementId = "G-4F5TKMFVXV";
+---
+
+{/* Googleタグ (gtag.js) */}
+<script
+  async
+  src={`https://www.googletagmanager.com/gtag/js?id=${measurementId}`}></script>
+<script define:vars={{ measurementId }}>
+  window.dataLayer = window.dataLayer || [];
+  function gtag() {
+    dataLayer.push(arguments);
+  }
+  gtag("js", new Date());
+
+  gtag("config", measurementId);
+</script>
