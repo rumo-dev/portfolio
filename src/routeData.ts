@@ -15,7 +15,7 @@ export const onRequest = defineRouteMiddleware((context) => {
 	const description = entry?.data?.description ?? DEFAULT_DESCRIPTION;
 
 	// public/og-image.png を全ページ共通のOGP画像として使用（base パスを考慮）
-	const ogImageUrl = new URL(`${import.meta.env.BASE_URL}og-image.png`, context.site);
+	const ogImageUrl = new URL('/portfolio/og-image.png', context.site);
 	const canonicalUrl = context.url;
 
 	head.push(
