@@ -1,0 +1,19 @@
+---
+// サイトのURLとサイト名を設定します
+const siteUrl = Astro.site
+  ? Astro.site.href
+  : "https://rumo-dev.github.io/portfolio/";
+const siteName = "就活用ポートフォリオ";
+const siteDescription = "就活用のポートフォリオです。";
+
+// schema.orgに基づく構造化データの定義
+const schema = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: siteName,
+  url: siteUrl,
+  description: siteDescription,
+};
+---
+
+<script type="application/ld+json" set:html={JSON.stringify(schema)} />

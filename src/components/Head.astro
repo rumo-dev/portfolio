@@ -8,6 +8,7 @@ import { ClientRouter } from "astro:transitions";
 import Clarity from "./Clarity.astro";
 import GoogleAnalytics from "./GoogleAnalytics.astro";
 import SearchConsole from "./SearchConsole.astro";
+import JsonLd from "./JsonLd.astro";
 
 // ▼▼▼ アニメーションの種類を切り替えたいときはここを書き換えるだけ ▼▼▼
 // 'fade'（フェード） | 'slide'（左右スライド） | 'slide-up'（下からスライド） | 'zoom'（拡大縮小）
@@ -17,6 +18,7 @@ const PAGE_TRANSITION_TYPE = "fade";
 
 <StarlightHead {...Astro.props}>
   <slot />
+  <JsonLd />
   <SearchConsole />
 </StarlightHead>
 <ClientRouter />
