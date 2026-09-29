@@ -18,9 +18,12 @@ const PAGE_TRANSITION_TYPE = "fade";
 
 <StarlightHead {...Astro.props}>
   <slot />
-  <JsonLd />
-  <SearchConsole />
 </StarlightHead>
+
+{/* ▼▼▼ StarlightHeadの「外側」に配置することで確実に出力されます ▼▼▼ */}
+<JsonLd />
+<SearchConsole />
+
 <ClientRouter />
 <GoogleAnalytics />
 <Clarity />
