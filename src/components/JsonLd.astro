@@ -1,19 +1,58 @@
 ---
-// サイトのURLとサイト名を設定します
-const siteUrl = Astro.site
-  ? Astro.site.href
-  : "https://rumo-dev.github.io/portfolio/";
-const siteName = "就活用ポートフォリオ";
-const siteDescription = "就活用のポートフォリオです。";
+// 1. 各ページからタイトルや説明文を上書きできるようにPropsを定義
+export interface Props {
+  title?: string;
+  description?: string;
+}
 
-// schema.orgに基づく構造化データの定義
+// デフォルト値を設定
+const {
+  title = "就活用ポートフォリオ",
+  description = "就活用のポートフォリオです。",
+} = Astro.props;
+
+// 2. URLの正規化（現在のページの正確なURLを動的に生成）
+const fallbackUrl = "https://rumo-dev.github.io/portfolio/";
+const siteUrl = Astro.site ? Astro.site.origin : fallbackUrl;
+const canonicalURL = new URL(Astro.url.pathname, siteUrl).href;
+
+// 3. schema.orgの定義 (@graphを使ってWebSiteとPersonを組み合わせる)
 const schema = {
   "@context": "https://schema.org",
-  "@type": "WebSite",
-  name: siteName,
-  url: siteUrl,
-  description: siteDescription,
+  "@graph": [
+    // サイト全体の情報
+    {
+      "@type": "WebSite",
+      "@id": `${siteUrl}/#website`,
+      url: siteUrl,
+      name: "就活用ポートフォリオ", // サイト全体の固定名
+      description: "就活用のポートフォリオです。",
+    },
+    // 現在のページと著者の情報
+    {
+      "@type": "ProfilePage", // または WebPage
+      "@id": `${canonicalURL}#webpage`,
+      url: canonicalURL,
+      name: title,
+      description: description,
+      isPartOf: { "@id": `${siteUrl}/#website` },
+      about: {
+        "@type": "Person",
+        name: "あなたの名前", // 💡 ご自身の名前に変更してください
+        url: siteUrl,
+        sameAs: [
+          // 💡 必要に応じてGitHubやZennなどのリンクを追加すると信頼性が上がります
+          "https://github.com/rumo-dev",
+        ],
+      },
+    },
+  ],
 };
 ---
 
-<script type="application/ld+json" set:html={JSON.stringify(schema)} />
+<!-- is:inline をつけることでAstroのスクリプト最適化を回避し、安全に出力します -->
+<script
+  type="application/ld+json"
+  is:inline
+  set:html={JSON.stringify(schema)}
+/>
