@@ -1,0 +1,79 @@
+---
+// 「なぜこの手法を選んだか」を、検討した選択肢とあわせて示すブロック
+interface Alt {
+  name: string;
+  note: string;
+}
+interface Props {
+  chosen: string; // 採用した方針
+  reason: string; // 採用理由
+  alternatives?: Alt[]; // 検討した他の選択肢
+}
+const { chosen, reason, alternatives = [] } = Astro.props;
+---
+
+<div class="decision not-content">
+  <p class="dc-label">採用した方針</p>
+  <p class="dc-chosen">{chosen}</p>
+  <p class="dc-reason">{reason}</p>
+  {
+    alternatives.length > 0 && (
+      <>
+        <p class="dc-label">検討した他の選択肢</p>
+        <ul class="dc-alts">
+          {alternatives.map((a) => (
+            <li>
+              <strong>{a.name}</strong>
+              <span>{a.note}</span>
+            </li>
+          ))}
+        </ul>
+      </>
+    )
+  }
+</div>
+
+<style>
+  .decision {
+    margin: 1.2rem 0 1.5rem;
+    padding: 1.2rem 1.4rem;
+    border: 1px solid var(--sl-color-hairline-light);
+    border-left: 4px solid var(--sl-color-accent);
+    border-radius: 10px;
+    background: var(--sl-color-bg-card);
+  }
+  .dc-label {
+    margin: 0.9rem 0 0.3rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--sl-color-accent);
+  }
+  .dc-label:first-child {
+    margin-top: 0;
+  }
+  .dc-chosen {
+    margin: 0;
+    font-weight: 700;
+    color: var(--sl-color-text);
+  }
+  .dc-reason {
+    margin: 0.4rem 0 0;
+    color: var(--sl-color-text);
+  }
+  .dc-alts {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 0.5rem;
+  }
+  .dc-alts li {
+    display: grid;
+    gap: 0.1rem;
+  }
+  .dc-alts span {
+    font-size: 0.9rem;
+    color: var(--sl-color-text-muted);
+  }
+</style>

@@ -9,6 +9,7 @@ import { Aside } from "@astrojs/starlight/components";
 import ImgComparison from "../../../components/ImgComparison.astro";
 import dummyImg from "../../../assets/dummy00.png";
 import houstonImg from "../../../assets/dummy01.png";
+import DesignDecision from "../../../components/DesignDecision.astro";
 
 Adaptationで露出調整済みのHDRカラーを最終的にディスプレイへ表示するため、AtmosFioreでは **Tone Mapping** を実装しています。ACES・Reinhard・AgX・GT（Uchimura）など、実に34種類のアルゴリズムを実行時に切り替えられるのが最大の特徴です。
 
@@ -36,6 +37,20 @@ HDRレンダリングでは輝度値が1.0を超える（真っ白より明る�
   rightImage={houstonImg.src}
   altLeft="トーンマッピング前"
   altRight="トーンマッピング後"
+/>
+
+---
+
+## 🧭 設計判断：なぜこの手法か
+
+<DesignDecision
+  chosen="ACES を既定にし、34種類のアルゴリズムを実行時に切り替えて比較できる構成にした"
+  reason="室内シーンのハイライトに映画的なロールオフ（自然な階調の落ち方）が欲しく、ACES を既定にしました。ただし、絵作りの好みやシーンで最適なカーブは変わるため、アルゴリズムを1つの .hlsli に集約し、シェーダーを再コンパイルせずに GUI から差し替えて見比べられるようにしています。"
+  alternatives={[
+    { name: "Reinhard 系", note: "実装が単純で軽量。ただし高輝度域で彩度が落ちやすい。" },
+    { name: "AgX", note: "Blender 発の彩度保持型。彩度崩壊が少ない。" },
+    { name: "GT（Uchimura）", note: "シャドウ・ハイライトの両方を精密に制御できる、ゲーム向けの汎用カーブ。" },
+  ]}
 />
 
 ---

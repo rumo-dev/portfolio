@@ -1,24 +1,67 @@
 ---
+// YouTube 埋め込み（画面に入ったら自動再生）
+// ブラウザの自動再生ポリシーにより、自動再生は「ミュート」で行われます。
+// 音声は動画プレイヤーのミュート解除ボタンで有効にできます。
 interface Props {
   videoId: string;
   title: string;
+  autoplay?: boolean;
 }
-const { videoId, title } = Astro.props;
+const { videoId, title, autoplay = true } = Astro.props;
+const params = new URLSearchParams({
+  rel: "0",
+  playsinline: "1",
+  ...(autoplay ? { autoplay: "1", mute: "1" } : {}),
+});
+const src = `https://www.youtube.com/embed/${videoId}?${params}`;
 ---
-<div class="video-container">
-  <iframe 
-    src={`https://www.youtube.com/embed/${videoId}`} 
+
+<div class="video-container" data-autoplay={autoplay ? "1" : "0"}>
+  <iframe
+    data-src={src}
     title={title}
     allowfullscreen
-    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture">
-  </iframe>
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+  ></iframe>
 </div>
+
+<script>
+  // 画面に入った時点で src を設定する（見えていない動画が裏で再生されないように）
+  function setupVideos() {
+    const frames = document.querySelectorAll<HTMLIFrameElement>(
+      ".video-container iframe[data-src]",
+    );
+    const load = (f: HTMLIFrameElement) => {
+      if (f.dataset.src && !f.src) f.src = f.dataset.src;
+    };
+    if (!("IntersectionObserver" in window)) {
+      frames.forEach(load);
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((e) => {
+          if (e.isIntersecting) {
+            load(e.target as HTMLIFrameElement);
+            io.unobserve(e.target);
+          }
+        });
+      },
+      { threshold: 0.4 },
+    );
+    frames.forEach((f) => io.observe(f));
+  }
+  // View Transitions（ページ切り替え）後にも動くよう astro:page-load を使用
+  document.addEventListener("astro:page-load", setupVideos);
+</script>
 
 <style>
   .video-container {
     width: 100%;
     aspect-ratio: 16 / 9;
     background: #000;
+    border-radius: 12px;
+    overflow: hidden;
   }
   .video-container iframe {
     width: 100%;

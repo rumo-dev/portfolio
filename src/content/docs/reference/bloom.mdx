@@ -9,6 +9,7 @@ import { Aside } from "@astrojs/starlight/components";
 import ImgComparison from "../../../components/ImgComparison.astro";
 import dummyImg from "../../../assets/dummy00.png";
 import houstonImg from "../../../assets/dummy01.png";
+import DesignDecision from "../../../components/DesignDecision.astro";
 
 HDRレンダリングされたシーンの高輝度部分を光源のようににじませて表現するため、AtmosFioreでは **Bloom** を実装しています。単純なぼかしではなく、複数解像度でのダウンサンプル・アップサンプルを組み合わせることで、広がりのある自然な発光を低コストで再現しています。
 
@@ -36,6 +37,18 @@ Bloomの有無をスライダーで比較できます。
   rightImage={houstonImg.src}
   altLeft="Bloomオフ"
   altRight="Bloomオン"
+/>
+
+---
+
+## 🧭 設計判断：なぜこの手法か
+
+<DesignDecision
+  chosen="輝度抽出 → 6段階のダウンサンプル＋ガウシアンブラー → 加算合成（ミップチェイン方式）"
+  reason="単一解像度のままブラー半径を大きくすると、処理コストが急増します。解像度を段階的に落としながらブラーをかけることで、広がりのある自然な発光を低コストで得られる構成にしました。段数は固定にして、フレームごとの負荷を安定させています。"
+  alternatives={[
+    { name: "単一解像度で大半径のガウシアンブラー", note: "実装は単純だが、半径に応じてコストが急増するため採用しなかった。" },
+  ]}
 />
 
 ---

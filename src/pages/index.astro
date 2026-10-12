@@ -7,6 +7,15 @@ import Clarity from "../components/Clarity.astro";
 import GoogleAnalytics from "../components/GoogleAnalytics.astro";
 import SearchConsole from "../components/SearchConsole.astro";
 import JsonLd from "../components/JsonLd.astro";
+import {
+  focus,
+  startHere,
+  roadmap,
+  achievements,
+  timeline,
+  githubUser,
+  faq,
+} from "../data/profile";
 
 // ---------- 基本設定 ----------
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -14,10 +23,23 @@ const url = (path: string) => `${base}${path}`;
 const origin = Astro.site ?? new URL("https://rumo-dev.github.io");
 
 const title = "丸毛 温仁 | グラフィックスプログラマー志望 ポートフォリオ";
-const description =
-  "DirectX 11 / C++ / HLSL で描画エンジンを自作するグラフィックスプログラマー志望・丸毛温仁のポートフォリオ。PBR・ディファードライティング・ポストプロセスの実装解説21本と、個人制作・チーム制作3作品を掲載。";
 const canonical = new URL(`${base}/`, origin).href;
 const ogImage = new URL(`${base}/og-image.png`, origin).href;
+
+// Lighthouse 計測結果（`npm run lighthouse` で生成。無ければ非表示）
+const lhFiles = import.meta.glob("../data/lighthouse.json", {
+  eager: true,
+}) as Record<string, { default: Record<string, number | string> }>;
+const lh = Object.values(lhFiles)[0]?.default;
+const lhItems = lh
+  ? [
+      ["Performance", lh.performance],
+      ["Accessibility", lh.accessibility],
+      ["Best Practices", lh.bestPractices],
+      ["SEO", lh.seo],
+    ]
+  : [];
+const sortedTimeline = [...timeline].sort((a, b) => b.date.localeCompare(a.date));
 
 const EMAIL = "marumo.h.job@gmail.com";
 const GITHUB = "https://github.com/rumo-dev";
@@ -44,6 +66,9 @@ const topics = docs
       full,
     };
   });
+
+const description =
+  `DirectX 11 / C++ / HLSL で描画エンジンを自作する${focus.role}志望・丸毛温仁のポートフォリオ。PBR・ディファードライティング・ポストプロセスの実装解説${topics.length}本と、個人制作・チーム制作3作品を掲載。`;
 
 // ---------- 作品データ ----------
 const featured = {
@@ -155,6 +180,7 @@ const skillsExp = [
         <a href="#strengths">強み</a>
         <a href={url("/reference/")}>技術解説</a>
         <a href="#skills">スキル</a>
+        <a href="#faq">Q&A</a>
         <a href="#about">プロフィール</a>
         <a class="lp-nav-cta" href="#contact">連絡する</a>
       </nav>
@@ -172,6 +198,19 @@ const skillsExp = [
           loading="eager"
           fetchpriority="high"
         />
+        <video
+          class="lp-hero-video"
+          autoplay
+          muted
+          loop
+          playsinline
+          preload="auto"
+          aria-hidden="true"
+          tabindex="-1"
+        >
+          <source src={url("/media/hero.webm")} type="video/webm" />
+          <source src={url("/media/hero.mp4")} type="video/mp4" />
+        </video>
         <div class="lp-hero-shade"></div>
         <div class="lp-wrap lp-hero-inner">
           <p class="lp-eyebrow">
@@ -192,7 +231,7 @@ const skillsExp = [
           <dl class="lp-facts">
             <div>
               <dt>志望職種</dt>
-              <dd>グラフィックス / ゲームプログラマー</dd>
+              <dd>{focus.role}</dd>
             </div>
             <div>
               <dt>主要技術</dt>
@@ -221,6 +260,31 @@ const skillsExp = [
             <strong>3作品</strong>
             <span>個人制作1 ・ チーム制作2</span>
           </div>
+        </div>
+      </section>
+
+      <!-- ================= Start here ================= -->
+      <section id="start" class="lp-section lp-start">
+        <div class="lp-wrap">
+          <p class="lp-label">Start here</p>
+          <h2>最初に見てほしい3ページ</h2>
+          <ol class="start-grid">
+            {
+              startHere.map((s) => (
+                <li>
+                  <a class="start-card" href={url(s.path)}>
+                    <span class="start-meta">
+                      <span class="start-step">{s.step}</span>
+                      <span class="start-time">{s.time}</span>
+                    </span>
+                    <strong>{s.title}</strong>
+                    <span class="start-desc">{s.desc}</span>
+                    <em>見る →</em>
+                  </a>
+                </li>
+              ))
+            }
+          </ol>
         </div>
       </section>
 
@@ -345,6 +409,104 @@ const skillsExp = [
         </div>
       </section>
 
+      <!-- ================= Growth ================= -->
+      <section id="growth" class="lp-section lp-alt">
+        <div class="lp-wrap">
+          <p class="lp-label">Growth</p>
+          <h2>継続して取り組んでいること</h2>
+          <div class="growth-grid">
+            <div>
+              <h3 class="sub-title">次に学ぶ予定</h3>
+              <ul class="roadmap">
+                {
+                  roadmap.map((r) => (
+                    <li>
+                      <strong>{r.title}</strong>
+                      <span>{r.text}</span>
+                    </li>
+                  ))
+                }
+              </ul>
+            </div>
+            <div>
+              <h3 class="sub-title">活動の記録</h3>
+              <ul class="timeline">
+                {
+                  sortedTimeline.map((t) => (
+                    <li>
+                      <time>{t.date}</time>
+                      <span>{t.text}</span>
+                    </li>
+                  ))
+                }
+              </ul>
+              {
+                githubUser && (
+                  <figure class="gh-chart">
+                    <a href={`https://github.com/${githubUser}`} target="_blank" rel="noopener">
+                      <img
+                        src={`https://ghchart.rshah.org/f59e0b/${githubUser}`}
+                        alt="GitHub のコントリビューション（活動量）グラフ"
+                        loading="lazy"
+                        onerror="this.closest('figure').hidden=true"
+                      />
+                    </a>
+                  </figure>
+                )
+              }
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {
+        achievements.length > 0 && (
+          <section id="achievements" class="lp-section">
+            <div class="lp-wrap">
+              <p class="lp-label">Achievements</p>
+              <h2>実績・評価</h2>
+              <ul class="ach-list">
+                {
+                  achievements.map((a) => (
+                    <li>
+                      {a.date && <time>{a.date}</time>}
+                      <div>
+                        <strong>
+                          {a.href ? (
+                            <a href={a.href} target="_blank" rel="noopener">{a.title}</a>
+                          ) : (
+                            a.title
+                          )}
+                        </strong>
+                        {a.detail && <span>{a.detail}</span>}
+                      </div>
+                    </li>
+                  ))
+                }
+              </ul>
+            </div>
+          </section>
+        )
+      }
+
+      <!-- ================= FAQ ================= -->
+      <section id="faq" class="lp-section">
+        <div class="lp-wrap lp-narrow">
+          <p class="lp-label">Q&amp;A</p>
+          <h2>よく聞かれること</h2>
+          <div class="faq">
+            {
+              faq.map((f) => (
+                <details>
+                  <summary>{f.q}</summary>
+                  <p>{f.a}</p>
+                </details>
+              ))
+            }
+          </div>
+        </div>
+      </section>
+
       <!-- ================= About ================= -->
       <section id="about" class="lp-section lp-alt">
         <div class="lp-wrap about">
@@ -367,7 +529,7 @@ const skillsExp = [
               <div><dt>名前</dt><dd>丸毛 温仁（マルモ ハルト）</dd></div>
               <div><dt>在籍校</dt><dd>ECCコンピュータ専門学校 ゲーム開発研究学科 3年</dd></div>
               <div><dt>卒業見込み</dt><dd>2028年3月</dd></div>
-              <div><dt>希望職種</dt><dd>グラフィックスプログラマー / ゲームプログラマー</dd></div>
+              <div><dt>希望職種</dt><dd>{focus.role}</dd></div>
               <div><dt>専攻</dt><dd>3Dゲームエンジン開発・レンダリングパイプライン</dd></div>
               <div><dt>趣味</dt><dd>習字（集中力とバランス感覚を養っています）</dd></div>
             </dl>
@@ -391,10 +553,45 @@ const skillsExp = [
     </main>
 
     <footer class="lp-footer">
+      {
+        lh && (
+          <div class="lp-wrap lp-quality" aria-label="Lighthouse によるサイト品質の計測結果">
+            <p>
+              Site Quality（Lighthouse / {lh.device} / {lh.measuredAt} 計測・{lh.runs}回の中央値）
+            </p>
+            <ul>
+              {
+                lhItems.map(([name, score]) => (
+                  <li data-level={Number(score) >= 90 ? "good" : Number(score) >= 50 ? "ok" : "low"}>
+                    <strong>{score}</strong>
+                    <span>{name}</span>
+                  </li>
+                ))
+              }
+            </ul>
+          </div>
+        )
+      }
       <div class="lp-wrap">© 2026 Haruto Marumo ・ Built with Astro</div>
     </footer>
   </body>
 </html>
+
+<script>
+  // ヒーロー背景の動画: 再生が始まったらフェードイン。モーション低減・通信量節約の設定では使わない
+  const v = document.querySelector<HTMLVideoElement>(".lp-hero-video");
+  if (v) {
+    const conn = (navigator as any).connection;
+    const skip =
+      matchMedia("(prefers-reduced-motion: reduce)").matches || conn?.saveData;
+    if (skip) {
+      v.remove();
+    } else {
+      v.addEventListener("playing", () => v.classList.add("is-playing"));
+      v.play().catch(() => {});
+    }
+  }
+</script>
 
 <style is:global>
   .lp {
@@ -549,6 +746,59 @@ const skillsExp = [
   .lp-contact .lp-cta { justify-content: center; }
   .lp-footer { padding: 2rem 0; text-align: center; color: var(--muted); font-size: 0.82rem; border-top: 1px solid var(--line); }
 
+  /* ---- hero video ---- */
+  .lp-hero-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 40%; opacity: 0; transition: opacity 0.8s; }
+  .lp-hero-video.is-playing { opacity: 1; }
+
+  /* ---- start here ---- */
+  .start-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.25rem; padding: 0; list-style: none; }
+  .start-card { display: flex; flex-direction: column; gap: 0.5rem; height: 100%; padding: 1.4rem; background: var(--card); border: 1px solid var(--line); border-radius: 14px; transition: transform 0.3s, border-color 0.3s; }
+  .start-card:hover { transform: translateY(-4px); border-color: var(--acc); }
+  .start-meta { display: flex; align-items: center; gap: 0.6rem; }
+  .start-step { display: grid; place-items: center; width: 1.9rem; height: 1.9rem; border-radius: 50%; background: var(--acc); color: #1c1100; font-weight: 800; }
+  .start-time { font-size: 0.8rem; color: var(--muted); }
+  .start-card strong { font-size: 1.05rem; }
+  .start-desc { font-size: 0.9rem; color: #d4dbe7; flex: 1; }
+  .start-card em { font-style: normal; color: var(--acc); font-weight: 700; font-size: 0.9rem; }
+
+  /* ---- growth / achievements ---- */
+  .growth-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 2.5rem; }
+  .sub-title { font-size: 1rem; color: var(--muted); font-weight: 600; margin-bottom: 0.9rem; }
+  .roadmap { display: grid; gap: 0.9rem; }
+  .roadmap li { display: grid; gap: 0.2rem; padding: 1rem 1.2rem; background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--acc); border-radius: 10px; }
+  .roadmap span { font-size: 0.9rem; color: #d4dbe7; }
+  .timeline { display: grid; gap: 0.8rem; border-left: 2px solid var(--line); padding-left: 1.2rem; }
+  .timeline li { display: grid; gap: 0.1rem; position: relative; }
+  .timeline li::before { content: ""; position: absolute; left: -1.62rem; top: 0.55rem; width: 0.65rem; height: 0.65rem; border-radius: 50%; background: var(--acc); }
+  .timeline time, .ach-list time { color: var(--acc); font-weight: 700; font-size: 0.85rem; }
+  .gh-chart { margin: 1.5rem 0 0; padding: 0.8rem; background: #fff; border-radius: 10px; }
+  .gh-chart img { width: 100%; height: auto; display: block; }
+  .ach-list { display: grid; gap: 0.8rem; }
+  .ach-list li { display: flex; gap: 1.2rem; align-items: baseline; padding: 1rem 1.2rem; background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+  .ach-list div { display: grid; }
+  .ach-list span { font-size: 0.9rem; color: var(--muted); }
+  .ach-list a { text-decoration: underline; text-underline-offset: 3px; }
+
+  /* ---- faq ---- */
+  .lp-narrow { width: min(820px, 100% - 3rem); }
+  .faq { display: grid; gap: 0.7rem; }
+  .faq details { background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+  .faq summary { cursor: pointer; padding: 1rem 1.2rem; font-weight: 700; list-style: none; display: flex; justify-content: space-between; gap: 1rem; }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary::after { content: "+"; color: var(--acc); font-size: 1.3rem; line-height: 1.2; }
+  .faq details[open] summary::after { content: "−"; }
+  .faq details p { padding: 0 1.2rem 1.2rem; color: #d4dbe7; font-size: 0.95rem; }
+
+  /* ---- site quality ---- */
+  .lp-quality { margin-bottom: 1.8rem; }
+  .lp-quality p { font-size: 0.8rem; margin-bottom: 0.8rem; }
+  .lp-quality ul { display: flex; justify-content: center; flex-wrap: wrap; gap: 1rem 1.6rem; }
+  .lp-quality li { display: grid; justify-items: center; gap: 0.3rem; }
+  .lp-quality strong { display: grid; place-items: center; width: 3.4rem; height: 3.4rem; border-radius: 50%; font-size: 1.15rem; border: 3px solid #10b981; color: #6ee7b7; }
+  .lp-quality li[data-level="ok"] strong { border-color: #f59e0b; color: #fcd34d; }
+  .lp-quality li[data-level="low"] strong { border-color: #ef4444; color: #fca5a5; }
+  .lp-quality span { font-size: 0.72rem; }
+
   /* ---- responsive ---- */
   @media (max-width: 860px) {
     .feature { grid-template-columns: 1fr; }
@@ -560,6 +810,7 @@ const skillsExp = [
     .lp-section { padding-block: 3.5rem; }
     .lp-proof-grid { grid-template-columns: 1fr; gap: 0.8rem; }
     .about-list > div { grid-template-columns: 1fr; gap: 0; }
+    .growth-grid { grid-template-columns: 1fr; gap: 2rem; }
   }
   @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }

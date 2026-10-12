@@ -8,6 +8,7 @@ sidebar:
 import { Aside } from "@astrojs/starlight/components";
 import ImageGrid from "../../../components/ImageGrid.astro";
 import dummyImg from "../../../assets/dummy00.png";
+import DesignDecision from "../../../components/DesignDecision.astro";
 
 多数の光源を効率よく処理するため、AtmosFioreは **ディファードレンダリング** を採用しています。その中核となるのが、ジオメトリパスで書き出した法線・アルベド・位置・エミッシブなどの幾何情報を保持する **G-Buffer** です。ライティング計算をジオメトリ描画から完全に分離することで、光源数が増えてもドローコールを増やさずに済む設計になっています。
 
@@ -47,6 +48,18 @@ Depth Buffer : D32_FLOAT
 ## 🖼️ デモ
 
 <ImageGrid images={[dummyImg.src]} />
+
+---
+
+## 🧭 設計判断：なぜこの手法か
+
+<DesignDecision
+  chosen="4つのレンダーターゲットに、必要な情報を最小限のフォーマットで格納する"
+  reason="ディファードライティングでは G-Buffer が大きなメモリと帯域を消費します（1920x1080 で 1フレームあたり約64MB）。法線・アルベド+金属度・位置+AO・エミッシブを、用途に合うフォーマットで分けて持たせ、ピクセルシェーダーの読み取り負荷も抑える構成にしました。"
+  alternatives={[
+    { name: "位置情報を深度バッファから再構築", note: "G-Buffer を1枚減らせるため、メモリ削減策として検討中。現在は位置を直接格納している。" },
+  ]}
+/>
 
 ---
 
