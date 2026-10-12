@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import mermaid from 'astro-mermaid';
 
 // https://astro.build/config
 export default defineConfig({
@@ -9,8 +10,10 @@ export default defineConfig({
 	base: '/portfolio',
 
 	integrations: [
+		// Mermaid図を描画（必ず starlight() より前に置く）
+		mermaid({ theme: 'dark', autoTheme: true }),
 		starlight({
-			title: 'AtmosFiore Docs & Portfolio',
+			title: '丸毛 温仁 Portfolio',
 			// 室内シェーダーの「灯火と闇」を表現するカスタムCSS
 			customCss: ['./src/styles/custom.css'],
 			// 右側の目次（Table of Contents）をグローバルで非表示にする
@@ -51,22 +54,19 @@ export default defineConfig({
 				}
 			],
 			sidebar: [
+				// トップ（採用担当向けランディングページ）へ戻る導線
+				{ label: '← トップページ', link: '/' },
 				{
-					label: 'プロジェクト',
+					label: '制作実績',
 					items: [
-						{ autogenerate: { directory: 'guides' } } // guidesフォルダ内を自動メニュー化
+						{ autogenerate: { directory: 'guides' } }, // guidesフォルダ内を自動メニュー化
 					],
 				},
 				{
-					label: 'コア技術・実装解説',
+					label: '技術解説（AtmosFiore）',
+					collapsed: true, // 初期表示では折りたたみ、作品を主役にする
 					items: [
-						{ autogenerate: { directory: 'reference' } } // referenceフォルダ内を自動メニュー化
-					],
-				},
-				{
-					label: 'Debug用',
-					items: [
-						{ autogenerate: { directory: 'debug' } } // debugフォルダ内を自動メニュー化
+						{ autogenerate: { directory: 'reference' } },
 					],
 				},
 			],

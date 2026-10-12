@@ -1,0 +1,568 @@
+---
+// 採用担当向けトップページ（Starlightのドキュメント枠を使わない独自レイアウト）
+import { Image } from "astro:assets";
+import { getCollection } from "astro:content";
+import heroImg from "../assets/hero.png";
+import Clarity from "../components/Clarity.astro";
+import GoogleAnalytics from "../components/GoogleAnalytics.astro";
+import SearchConsole from "../components/SearchConsole.astro";
+import JsonLd from "../components/JsonLd.astro";
+
+// ---------- 基本設定 ----------
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const url = (path: string) => `${base}${path}`;
+const origin = Astro.site ?? new URL("https://rumo-dev.github.io");
+
+const title = "丸毛 温仁 | グラフィックスプログラマー志望 ポートフォリオ";
+const description =
+  "DirectX 11 / C++ / HLSL で描画エンジンを自作するグラフィックスプログラマー志望・丸毛温仁のポートフォリオ。PBR・ディファードライティング・ポストプロセスの実装解説21本と、個人制作・チーム制作3作品を掲載。";
+const canonical = new URL(`${base}/`, origin).href;
+const ogImage = new URL(`${base}/og-image.png`, origin).href;
+
+const EMAIL = "marumo.h.job@gmail.com";
+const GITHUB = "https://github.com/rumo-dev";
+const X_URL = "https://x.com/rumo_atfi";
+
+// プロフィール写真（任意）: src/assets/profile.jpg|png|webp を置くと自動で表示されます
+const profileFiles = import.meta.glob("../assets/profile.{jpg,jpeg,png,webp}", {
+  eager: true,
+}) as Record<string, { default: ImageMetadata }>;
+const profileImg = Object.values(profileFiles)[0]?.default;
+
+// ---------- 技術解説の一覧（コンテンツから自動生成） ----------
+const docs = await getCollection("docs");
+const topics = docs
+  .filter((d) => d.id.startsWith("reference/") && d.id !== "reference/index")
+  .sort(
+    (a, b) => (a.data.sidebar?.order ?? 999) - (b.data.sidebar?.order ?? 999),
+  )
+  .map((d) => {
+    const full = d.data.title.replace(/^技術解説：/, "");
+    return {
+      href: url(`/${d.id}/`),
+      short: full.split("（")[0],
+      full,
+    };
+  });
+
+// ---------- 作品データ ----------
+const featured = {
+  title: "AtmosFiore",
+  kind: "個人制作 / リアルタイムレンダリング",
+  lead: "既存のゲームエンジンを使わず、DirectX 11 で描画基盤から自作。室内空間の光と空気感をフォトリアルに描くシェーダーデモです。",
+  role: "企画・設計・実装すべて（1人）",
+  period: "2025年8月〜 継続開発中",
+  tags: ["C++", "DirectX 11", "HLSL", "自作エンジン"],
+  points: [
+    "ディファードライティング + PBR + IBL + シャドウマッピング",
+    "Bloom / トーンマッピング / 自動露出などのポストプロセス",
+    "全実装を技術解説として公開（コード付き）",
+  ],
+  href: url("/guides/atmosfiore/"),
+  github: "https://github.com/rumo-dev/AtmosFiore",
+};
+
+const works = [
+  {
+    title: "Coin Baller",
+    kind: "チーム制作 / 3D Roguelike",
+    lead: "スマートボールとピンボールを融合した3Dローグライクゲーム。",
+    role: "シェーダープログラマー（ポストエフェクトなど）",
+    meta: "38日間 ・ プログラマー4人",
+    tags: ["DirectX 11", "C++", "GitHub Flow"],
+    thumb: "https://img.youtube.com/vi/eAyFPevaKRA/hqdefault.jpg",
+    href: url("/guides/coin-baller/"),
+  },
+  {
+    title: "FIGAVOID",
+    kind: "チーム制作 / 2D Roguelike",
+    lead: "敵にギリギリまで近づくスリルと、少ない爆弾で効率よく倒す戦略性を両立した2Dローグライク。",
+    role: "メインプログラマー（Player / Enemy / タイトル・リザルト）",
+    meta: "3週間 ・ プログラマー3人",
+    tags: ["DirectX 11", "C++", "GitHub Flow"],
+    thumb: "https://img.youtube.com/vi/RrdWjpoNi-s/hqdefault.jpg",
+    href: url("/guides/figavoid/"),
+  },
+];
+
+// ---------- 強み ----------
+const t = (slug: string) => topics.find((x) => x.href.endsWith(`/${slug}/`));
+const strengths = [
+  {
+    title: "描画パイプラインの設計",
+    text: "G-Bufferのレイアウト最適化など、メモリ帯域と描画コストを意識したディファードレンダリング基盤を実装。",
+    links: ["gbuffer", "deferred-lighting", "post-effect-manager"],
+  },
+  {
+    title: "物理ベースの質感とライティング",
+    text: "PBRマテリアル、IBL、各種光源、シャドウマッピングで、素材ごとの質感と光の振る舞いを再現。",
+    links: ["pbr", "ibl", "shadow-mapping", "area-light"],
+  },
+  {
+    title: "映像表現（ポストプロセス）",
+    text: "HDRレンダリングからトーンマッピング・自動露出・Bloomまで、シネマライクな絵作りを一貫して実装。",
+    links: ["tone-mapping", "adaptation", "bloom", "dof"],
+  },
+];
+
+const skillsMain = ["C++", "DirectX 11", "HLSL", "Git / GitHub", "Visual Studio 2022"];
+const skillsExp = [
+  "C#（Unity / UniTask / Zenject）",
+  "Unreal Engine",
+  "Blender",
+  "HTML / CSS / JS",
+  "Oracle Cloud (OCI)",
+  "Slack / Discord API",
+  "Excel / PowerPoint",
+];
+---
+
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" type="image/svg+xml" href={url("/favicon.svg")} />
+    <meta name="theme-color" content="#0b0f19" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="丸毛 温仁 Portfolio" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+
+    <JsonLd title={title} description={description} />
+    <SearchConsole />
+    <GoogleAnalytics />
+    <Clarity />
+  </head>
+
+  <body class="lp">
+    <header class="lp-nav">
+      <a class="lp-brand" href={url("/")}>丸毛 温仁<span> / Portfolio</span></a>
+      <nav aria-label="メインメニュー">
+        <a href="#works">制作実績</a>
+        <a href="#strengths">強み</a>
+        <a href={url("/reference/")}>技術解説</a>
+        <a href="#skills">スキル</a>
+        <a href="#about">プロフィール</a>
+        <a class="lp-nav-cta" href="#contact">連絡する</a>
+      </nav>
+    </header>
+
+    <main>
+      <!-- ================= Hero ================= -->
+      <section class="lp-hero">
+        <Image
+          class="lp-hero-bg"
+          src={heroImg}
+          alt="AtmosFioreで描画した、ランプの灯る大書庫のリアルタイムレンダリング"
+          widths={[800, 1200]}
+          sizes="100vw"
+          loading="eager"
+          fetchpriority="high"
+        />
+        <div class="lp-hero-shade"></div>
+        <div class="lp-wrap lp-hero-inner">
+          <p class="lp-eyebrow">
+            Graphics Programmer ・ 2028年3月 卒業見込み
+          </p>
+          <h1>
+            光と空気感を、<br />自作の DirectX 11 エンジンで描く。
+          </h1>
+          <p class="lp-lead">
+            ECCコンピュータ専門学校 ゲーム開発研究学科の丸毛 温仁（マルモ
+            ハルト）です。描画基盤の実装から、PBR・ディファードライティング・ポストプロセスまでを、ローレベルから一気通貫で開発しています。
+          </p>
+          <div class="lp-cta">
+            <a class="btn btn-primary" href="#works">作品を見る</a>
+            <a class="btn" href={GITHUB} target="_blank" rel="noopener">GitHub</a>
+            <a class="btn" href="#contact">連絡する</a>
+          </div>
+          <dl class="lp-facts">
+            <div>
+              <dt>志望職種</dt>
+              <dd>グラフィックス / ゲームプログラマー</dd>
+            </div>
+            <div>
+              <dt>主要技術</dt>
+              <dd>C++ ・ DirectX 11 ・ HLSL</dd>
+            </div>
+            <div>
+              <dt>開発経験</dt>
+              <dd>個人1本 ・ チーム2本（GitHub Flow）</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <!-- ================= Proof strip ================= -->
+      <section class="lp-proof" aria-label="実績の要約">
+        <div class="lp-wrap lp-proof-grid">
+          <div>
+            <strong>{topics.length}本</strong>
+            <span>公開中の技術解説（実装コード付き）</span>
+          </div>
+          <div>
+            <strong>2025.08〜</strong>
+            <span>自作エンジンを継続開発中</span>
+          </div>
+          <div>
+            <strong>3作品</strong>
+            <span>個人制作1 ・ チーム制作2</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= Works ================= -->
+      <section id="works" class="lp-section">
+        <div class="lp-wrap">
+          <p class="lp-label">Works</p>
+          <h2>制作実績</h2>
+
+          <article class="feature">
+            <a class="feature-media" href={featured.href} aria-label="AtmosFiore の詳細を見る">
+              <Image
+                src={heroImg}
+                alt="AtmosFioreのレンダリング画面"
+                widths={[600, 1000]}
+                sizes="(min-width: 900px) 55vw, 100vw"
+                loading="lazy"
+              />
+            </a>
+            <div class="feature-body">
+              <p class="lp-kicker">{featured.kind}</p>
+              <h3><a href={featured.href}>{featured.title}</a></h3>
+              <p>{featured.lead}</p>
+              <ul class="feature-points">
+                {featured.points.map((p) => <li>{p}</li>)}
+              </ul>
+              <p class="lp-meta"><b>担当</b> {featured.role}　<b>期間</b> {featured.period}</p>
+              <div class="chips">
+                {featured.tags.map((tag) => <span>{tag}</span>)}
+              </div>
+              <div class="feature-links">
+                <a class="btn btn-primary" href={featured.href}>詳細を見る</a>
+                <a class="btn" href={featured.github} target="_blank" rel="noopener">ソースコード (GitHub)</a>
+                <a class="btn" href={url("/reference/")}>技術解説</a>
+              </div>
+            </div>
+          </article>
+
+          <div class="work-grid">
+            {
+              works.map((w) => (
+                <article class="work">
+                  <a class="work-thumb" href={w.href} aria-label={`${w.title} の詳細を見る`}>
+                    <img src={w.thumb} alt={`${w.title} のプレイ映像サムネイル`} loading="lazy" />
+                  </a>
+                  <div class="work-body">
+                    <p class="lp-kicker">{w.kind}</p>
+                    <h3><a href={w.href}>{w.title}</a></h3>
+                    <p>{w.lead}</p>
+                    <p class="lp-meta"><b>担当</b> {w.role}</p>
+                    <p class="lp-meta">{w.meta}</p>
+                    <div class="chips">
+                      {w.tags.map((tag) => <span>{tag}</span>)}
+                    </div>
+                  </div>
+                </article>
+              ))
+            }
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= Strengths ================= -->
+      <section id="strengths" class="lp-section lp-alt">
+        <div class="lp-wrap">
+          <p class="lp-label">Strengths</p>
+          <h2>強み</h2>
+          <div class="strength-grid">
+            {
+              strengths.map((s) => (
+                <div class="strength">
+                  <h3>{s.title}</h3>
+                  <p>{s.text}</p>
+                  <ul>
+                    {s.links
+                      .map((slug) => t(slug))
+                      .filter(Boolean)
+                      .map((x) => (
+                        <li><a href={x?.href} title={x?.full}>{x?.short} →</a></li>
+                      ))}
+                  </ul>
+                </div>
+              ))
+            }
+            <div class="strength">
+              <h3>チーム開発・協働</h3>
+              <p>GitHub Flow と PR レビューで main を常に動く状態に保ち、データ駆動設計でプログラマー以外も調整しやすい基盤を設計。</p>
+              <ul>
+                <li><a href={url("/guides/coin-baller/")}>Coin Baller →</a></li>
+                <li><a href={url("/guides/figavoid/")}>FIGAVOID →</a></li>
+              </ul>
+            </div>
+          </div>
+
+          <h3 class="topics-title">技術解説 全{topics.length}本</h3>
+          <p class="topics-lead">AtmosFiore の各機能を、アルゴリズム・HLSL/C++コード付きで解説しています。</p>
+          <div class="chips chips-lg">
+            {topics.map((x) => <a href={x.href} title={x.full}>{x.short}</a>)}
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= Skills ================= -->
+      <section id="skills" class="lp-section">
+        <div class="lp-wrap">
+          <p class="lp-label">Skills</p>
+          <h2>スキル</h2>
+          <div class="skill-grid">
+            <div>
+              <h3>メインで使う技術</h3>
+              <div class="chips chips-lg chips-main">
+                {skillsMain.map((s) => <span>{s}</span>)}
+              </div>
+            </div>
+            <div>
+              <h3>使用経験のある技術</h3>
+              <div class="chips chips-lg">
+                {skillsExp.map((s) => <span>{s}</span>)}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= About ================= -->
+      <section id="about" class="lp-section lp-alt">
+        <div class="lp-wrap about">
+          {
+            profileImg && (
+              <Image
+                class="about-photo"
+                src={profileImg}
+                alt="丸毛 温仁のプロフィール写真"
+                width={240}
+                height={240}
+                loading="lazy"
+              />
+            )
+          }
+          <div>
+            <p class="lp-label">About</p>
+            <h2>プロフィール</h2>
+            <dl class="about-list">
+              <div><dt>名前</dt><dd>丸毛 温仁（マルモ ハルト）</dd></div>
+              <div><dt>在籍校</dt><dd>ECCコンピュータ専門学校 ゲーム開発研究学科 3年</dd></div>
+              <div><dt>卒業見込み</dt><dd>2028年3月</dd></div>
+              <div><dt>希望職種</dt><dd>グラフィックスプログラマー / ゲームプログラマー</dd></div>
+              <div><dt>専攻</dt><dd>3Dゲームエンジン開発・レンダリングパイプライン</dd></div>
+              <div><dt>趣味</dt><dd>習字（集中力とバランス感覚を養っています）</dd></div>
+            </dl>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= Contact ================= -->
+      <section id="contact" class="lp-section lp-contact">
+        <div class="lp-wrap">
+          <p class="lp-label">Contact</p>
+          <h2>お問い合わせ</h2>
+          <p class="lp-lead">インターンシップ・選考に関するご連絡は、メールでお気軽にどうぞ。</p>
+          <div class="lp-cta">
+            <a class="btn btn-primary" href={`mailto:${EMAIL}`}>{EMAIL}</a>
+            <a class="btn" href={GITHUB} target="_blank" rel="noopener">GitHub</a>
+            <a class="btn" href={X_URL} target="_blank" rel="noopener">X (@rumo_atfi)</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="lp-footer">
+      <div class="lp-wrap">© 2026 Haruto Marumo ・ Built with Astro</div>
+    </footer>
+  </body>
+</html>
+
+<style is:global>
+  .lp {
+    --bg: #0b0f19;
+    --bg-alt: #0e1424;
+    --card: rgba(17, 24, 39, 0.65);
+    --line: rgba(245, 158, 11, 0.18);
+    --acc: #f59e0b;
+    --acc-hi: #fef3c7;
+    --text: #f8fafc;
+    --muted: #a9b4c6;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI",
+      "Yu Gothic", "Noto Sans JP", Meiryo, system-ui, sans-serif;
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+  }
+  .lp *,
+  .lp *::before,
+  .lp *::after { box-sizing: border-box; }
+  .lp a { color: inherit; text-decoration: none; }
+  .lp a:focus-visible,
+  .lp .btn:focus-visible { outline: 2px solid var(--acc); outline-offset: 3px; border-radius: 6px; }
+  .lp h1, .lp h2, .lp h3, .lp p, .lp ul, .lp dl, .lp dd { margin: 0; }
+  .lp ul { padding: 0; list-style: none; }
+  html { scroll-behavior: smooth; scroll-padding-top: 4.5rem; }
+
+  .lp-wrap { width: min(1120px, 100% - 3rem); margin-inline: auto; }
+
+  /* ---- nav ---- */
+  .lp-nav {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    padding: 0.75rem 1.5rem;
+    background: rgba(7, 10, 18, 0.8);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+  }
+  .lp-brand { font-weight: 800; letter-spacing: 0.04em; }
+  .lp-brand span { font-weight: 500; color: var(--muted); }
+  .lp-nav nav { display: flex; align-items: center; gap: 1.4rem; font-size: 0.92rem; }
+  .lp-nav nav a { color: var(--muted); transition: color 0.2s; }
+  .lp-nav nav a:hover { color: var(--text); }
+  .lp-nav .lp-nav-cta {
+    color: #1c1100; background: var(--acc); font-weight: 700;
+    padding: 0.35rem 0.9rem; border-radius: 999px;
+  }
+  .lp-nav .lp-nav-cta:hover { color: #1c1100; background: #fbbf24; }
+
+  /* ---- hero ---- */
+  .lp-hero { position: relative; overflow: hidden; min-height: min(86vh, 760px); display: flex; align-items: center; }
+  .lp-hero-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 40%; }
+  .lp-hero-shade {
+    position: absolute; inset: 0;
+    background:
+      linear-gradient(90deg, rgba(11,15,25,0.94) 0%, rgba(11,15,25,0.78) 45%, rgba(11,15,25,0.35) 100%),
+      linear-gradient(0deg, var(--bg) 0%, transparent 30%);
+  }
+  .lp-hero-inner { position: relative; padding-block: 5rem 4rem; }
+  .lp-eyebrow { color: var(--acc); font-weight: 700; letter-spacing: 0.12em; font-size: 0.85rem; text-transform: uppercase; }
+  .lp-hero h1 { font-size: clamp(2rem, 5.2vw, 3.6rem); line-height: 1.25; margin-top: 0.9rem; font-weight: 800; letter-spacing: 0.01em; text-shadow: 0 2px 30px rgba(0,0,0,0.5); }
+  .lp-lead { max-width: 40rem; margin-top: 1.4rem; color: #d4dbe7; font-size: 1.02rem; }
+  .lp-cta { display: flex; flex-wrap: wrap; gap: 0.8rem; margin-top: 2rem; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0.65rem 1.25rem; border-radius: 10px; font-weight: 600; font-size: 0.95rem;
+    border: 1px solid var(--line); background: rgba(17,24,39,0.7); color: var(--text);
+    transition: transform 0.25s, border-color 0.25s, background 0.25s;
+  }
+  .btn:hover { border-color: var(--acc); transform: translateY(-2px); }
+  .btn-primary { background: var(--acc); color: #1c1100; border-color: var(--acc); font-weight: 700; }
+  .btn-primary:hover { background: #fbbf24; }
+  .lp-facts { display: flex; flex-wrap: wrap; gap: 1.5rem 2.5rem; margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--line); }
+  .lp-facts dt { font-size: 0.75rem; color: var(--muted); letter-spacing: 0.08em; }
+  .lp-facts dd { font-weight: 600; }
+
+  /* ---- proof ---- */
+  .lp-proof { background: var(--bg-alt); border-block: 1px solid var(--line); }
+  .lp-proof-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; padding-block: 1.6rem; text-align: center; }
+  .lp-proof strong { display: block; font-size: 1.7rem; color: var(--acc-hi); line-height: 1.3; }
+  .lp-proof span { font-size: 0.85rem; color: var(--muted); }
+
+  /* ---- sections ---- */
+  .lp-section { padding-block: 5rem; }
+  .lp-alt { background: var(--bg-alt); border-block: 1px solid var(--line); }
+  .lp-label { color: var(--acc); font-weight: 700; letter-spacing: 0.18em; font-size: 0.78rem; text-transform: uppercase; }
+  .lp h2 { font-size: clamp(1.6rem, 3vw, 2.1rem); margin: 0.3rem 0 2rem; }
+  .lp-kicker { font-size: 0.8rem; color: var(--acc); font-weight: 700; letter-spacing: 0.05em; }
+  .lp-meta { font-size: 0.88rem; color: var(--muted); }
+  .lp-meta b { color: var(--text); margin-right: 0.3rem; font-weight: 600; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+  .chips span, .chips a {
+    font-size: 0.78rem; font-weight: 600; padding: 0.2rem 0.7rem; border-radius: 999px;
+    background: rgba(245,158,11,0.1); border: 1px solid var(--line); color: var(--acc-hi);
+  }
+  .chips-lg span, .chips-lg a { font-size: 0.88rem; padding: 0.3rem 0.9rem; }
+  .chips a { transition: border-color 0.2s, background 0.2s; }
+  .chips a:hover { border-color: var(--acc); background: rgba(245,158,11,0.2); }
+  .chips-main span { background: var(--acc); color: #1c1100; border-color: var(--acc); }
+
+  /* ---- featured work ---- */
+  .feature {
+    display: grid; grid-template-columns: 1.15fr 1fr; gap: 0;
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden;
+  }
+  .feature-media { display: block; background: #000; }
+  .feature-media img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.6s; }
+  .feature-media:hover img { transform: scale(1.03); }
+  .feature-body { padding: 2rem; display: flex; flex-direction: column; gap: 0.8rem; }
+  .feature-body h3 { font-size: 1.7rem; }
+  .feature-points { display: grid; gap: 0.3rem; font-size: 0.93rem; color: #d4dbe7; }
+  .feature-points li { padding-left: 1.2rem; position: relative; }
+  .feature-points li::before { content: ""; position: absolute; left: 0; top: 0.75em; width: 0.5rem; height: 2px; background: var(--acc); }
+  .feature-links { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.5rem; }
+
+  .work-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; margin-top: 1.5rem; }
+  .work { display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; transition: transform 0.35s, border-color 0.35s, box-shadow 0.35s; }
+  .work:hover { transform: translateY(-4px); border-color: var(--acc); box-shadow: 0 14px 34px -14px rgba(245,158,11,0.25); }
+  .work-thumb { display: block; aspect-ratio: 16/9; background: #000; overflow: hidden; }
+  .work-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .work-body { padding: 1.2rem 1.4rem 1.5rem; display: flex; flex-direction: column; gap: 0.5rem; }
+  .work-body h3 { font-size: 1.25rem; }
+  .work-body p:not(.lp-kicker):not(.lp-meta) { font-size: 0.92rem; color: #d4dbe7; }
+  .work-body .chips { margin-top: 0.4rem; }
+
+  /* ---- strengths ---- */
+  .strength-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.25rem; }
+  .strength { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 1.4rem; }
+  .strength h3 { font-size: 1.05rem; margin-bottom: 0.5rem; color: var(--acc-hi); }
+  .strength p { font-size: 0.9rem; color: #d4dbe7; }
+  .strength ul { margin-top: 0.9rem; display: grid; gap: 0.2rem; font-size: 0.85rem; }
+  .strength li a { color: var(--acc); }
+  .strength li a:hover { text-decoration: underline; }
+  .topics-title { margin-top: 3rem; font-size: 1.15rem; }
+  .topics-lead { color: var(--muted); font-size: 0.92rem; margin: 0.3rem 0 1rem; }
+
+  /* ---- skills / about ---- */
+  .skill-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 2rem; }
+  .skill-grid h3 { font-size: 1rem; color: var(--muted); margin-bottom: 0.8rem; font-weight: 600; }
+  .about { display: flex; gap: 2.5rem; align-items: center; flex-wrap: wrap; }
+  .about-photo { width: 200px; height: 200px; border-radius: 50%; object-fit: cover; border: 3px solid var(--acc); box-shadow: 0 0 30px rgba(245,158,11,0.3); }
+  .about-list { display: grid; gap: 0.6rem; }
+  .about-list > div { display: grid; grid-template-columns: 7rem 1fr; gap: 1rem; padding-bottom: 0.6rem; border-bottom: 1px solid var(--line); }
+  .about-list dt { color: var(--muted); font-size: 0.88rem; }
+
+  /* ---- contact / footer ---- */
+  .lp-contact { text-align: center; }
+  .lp-contact .lp-lead { margin-inline: auto; }
+  .lp-contact .lp-cta { justify-content: center; }
+  .lp-footer { padding: 2rem 0; text-align: center; color: var(--muted); font-size: 0.82rem; border-top: 1px solid var(--line); }
+
+  /* ---- responsive ---- */
+  @media (max-width: 860px) {
+    .feature { grid-template-columns: 1fr; }
+    .feature-media { aspect-ratio: 16/9; }
+    .work-grid { grid-template-columns: 1fr; }
+    .lp-nav nav a:not(.lp-nav-cta) { display: none; }
+    .lp-nav nav a[href="#works"] { display: inline; }
+    .lp-hero-shade { background: linear-gradient(0deg, var(--bg) 0%, rgba(11,15,25,0.82) 60%, rgba(11,15,25,0.7) 100%); }
+    .lp-section { padding-block: 3.5rem; }
+    .lp-proof-grid { grid-template-columns: 1fr; gap: 0.8rem; }
+    .about-list > div { grid-template-columns: 1fr; gap: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .lp * { transition: none !important; }
+  }
+</style>

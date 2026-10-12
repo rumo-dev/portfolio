@@ -5,72 +5,32 @@ sidebar:
   order: 4
 ---
 
-import { Badge } from "@astrojs/starlight/components";
 import ModalVideo from "../../../components/ModalVideo.astro";
+import ProjectSummary from "../../../components/ProjectSummary.astro";
 
-<div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 2rem;">
-  <Badge text="チーム開発" variant="success" size="medium" />
-  <Badge text="DirectX11" variant="note" size="medium" />
-  <Badge text="C++" variant="danger" size="medium" />
-  <Badge text="Github" variant="caution" size="medium" />
-</div>
+{/* ⚠ 要確認: stack の表記。本文は Unity / C#（UniTask, Instantiate, OnDestroy）の内容ですが、
+    元のページ・トップでは「DirectX11 / C++」と書かれていました。実際の使用技術に合わせて修正してください。 */}
 
-## 作品概要
-
-敵にギリギリまで近づくことによるスリル感という面白さ、 ただ爆弾を使って敵を倒すだけでなく、いかに少ない爆弾でいかに効率よく敵を倒せるのか
+<ProjectSummary
+  kind="チーム制作 / 2D Roguelike（テーマ：ワンボタン）"
+  role="メインプログラマー（Player・Enemy の制御、タイトル、リザルト画面）"
+  period="3週間"
+  team="3人（プログラマー3人）"
+  stack={["DirectX 11", "C++", "GitHub Flow"]}
+  highlights={[
+    "オブジェクトプールで動的生成コストをほぼゼロにし、60FPSを維持",
+    "全 UniTask に CancellationToken を渡すライフサイクル管理で、タスクのゾンビ化を防止",
+    "GitHub Flow とプレハブ分割ルールで、ビルドエラーゼロのまま開発完了",
+  ]}
+/>
 
 ## デモ動画
 
-クリックすると拡大して再生されます。
-
 <ModalVideo videoId="RrdWjpoNi-s" title="FIGAVOID" />
 
-<table>
-  <thead>
-    <tr>
-      <th style="width: 30%">項目</th>
-      <th>内容</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>
-        <strong>開発環境</strong>
-      </td>
-      <td>DirectX11 / C++ / Github</td>
-    </tr>
-    <tr>
-      <td>
-        <strong>制作期間</strong>
-      </td>
-      <td>3週間</td>
-    </tr>
-    <tr>
-      <td>
-        <strong>制作人数</strong>
-      </td>
-      <td>3人 (プログラマー3人)</td>
-    </tr>
-    <tr>
-      <td>
-        <strong>自分の役割</strong>
-      </td>
-      <td>メインプログラマー</td>
-    </tr>
-    <tr>
-      <td>
-        <strong>担当パート</strong>
-      </td>
-      <td>Enemy・Playerの制御、タイトル、リザルト画面</td>
-    </tr>
-    <tr>
-      <td>
-        <strong>テーマ</strong>
-      </td>
-      <td>ワンボタン</td>
-    </tr>
-  </tbody>
-</table>
+## 作品概要
+
+敵にギリギリまで近づくことによるスリル感という面白さ。ただ爆弾を使って敵を倒すだけでなく、いかに少ない爆弾で、いかに効率よく敵を倒せるかという戦略性を両立しています。
 
 ---
 

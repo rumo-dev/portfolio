@@ -2,9 +2,9 @@ import { defineRouteMiddleware } from '@astrojs/starlight/route-data';
 
 // 各ページの description が未設定の場合に使うフォールバック文
 const DEFAULT_DESCRIPTION =
-	'グラフィックスプログラマー志望・丸毛温仁のポートフォリオ。DirectX 11 / HLSL による自作レンダリングエンジン「AtmosFiore」の実装解説や制作実績を掲載。';
+	'グラフィックスプログラマー志望・丸毛温仁のポートフォリオ。DirectX 11 / HLSL による自作レンダリングエンジン「AtmosFiore」の実装解説と制作実績を掲載。';
 
-const DEFAULT_SITE_TITLE = 'AtmosFiore Docs & Portfolio';
+const DEFAULT_SITE_TITLE = '丸毛 温仁 Portfolio';
 
 export const onRequest = defineRouteMiddleware((context) => {
 	const route = context.locals.starlightRoute;

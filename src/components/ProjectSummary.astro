@@ -1,0 +1,129 @@
+---
+// 作品ページ冒頭の「採用担当向けサマリー」カード
+// 担当・期間・人数・技術・成果を最初の画面で伝えるためのコンポーネント
+interface Link {
+  label: string;
+  href: string;
+}
+interface Props {
+  kind: string; // 例: 個人制作 / チーム制作
+  role: string; // 自分の担当
+  period: string;
+  team: string;
+  stack: string[];
+  highlights?: string[]; // 成果・アピールポイント（2〜4個推奨）
+  links?: Link[];
+}
+const { kind, role, period, team, stack, highlights = [], links = [] } = Astro.props;
+---
+
+<aside class="project-summary not-content">
+  <p class="ps-kind">{kind}</p>
+  <dl class="ps-facts">
+    <div><dt>担当</dt><dd>{role}</dd></div>
+    <div><dt>期間</dt><dd>{period}</dd></div>
+    <div><dt>人数</dt><dd>{team}</dd></div>
+  </dl>
+  <div class="ps-stack">
+    {stack.map((s) => <span>{s}</span>)}
+  </div>
+  {
+    highlights.length > 0 && (
+      <div class="ps-highlights">
+        <p class="ps-title">ポイント</p>
+        <ul>
+          {highlights.map((h) => <li>{h}</li>)}
+        </ul>
+      </div>
+    )
+  }
+  {
+    links.length > 0 && (
+      <div class="ps-links">
+        {links.map((l) => (
+          <a href={l.href} target={l.href.startsWith("http") ? "_blank" : undefined} rel={l.href.startsWith("http") ? "noopener" : undefined}>
+            {l.label}
+          </a>
+        ))}
+      </div>
+    )
+  }
+</aside>
+
+<style>
+  .project-summary {
+    margin: 0 0 2rem;
+    padding: 1.4rem 1.5rem;
+    background: var(--sl-color-bg-card);
+    border: 1px solid var(--sl-color-hairline-light);
+    border-radius: 14px;
+    display: grid;
+    gap: 1rem;
+  }
+  .ps-kind {
+    margin: 0;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--sl-color-accent);
+  }
+  .ps-facts {
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 0.9rem 1.5rem;
+  }
+  .ps-facts dt {
+    font-size: 0.75rem;
+    color: var(--sl-color-text-muted);
+  }
+  .ps-facts dd {
+    margin: 0;
+    font-weight: 600;
+    color: var(--sl-color-text);
+  }
+  .ps-stack {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  .ps-stack span {
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 0.15rem 0.65rem;
+    border-radius: 999px;
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid var(--sl-color-hairline);
+    color: var(--sl-color-accent-high);
+  }
+  .ps-title {
+    margin: 0 0 0.4rem;
+    font-size: 0.8rem;
+    color: var(--sl-color-text-muted);
+  }
+  .ps-highlights ul {
+    margin: 0;
+    padding-left: 1.2rem;
+    display: grid;
+    gap: 0.3rem;
+    color: var(--sl-color-text);
+  }
+  .ps-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+  .ps-links a {
+    padding: 0.4rem 0.95rem;
+    border-radius: 8px;
+    border: 1px solid var(--sl-color-hairline-light);
+    color: var(--sl-color-text);
+    text-decoration: none;
+    font-size: 0.88rem;
+    font-weight: 600;
+    transition: border-color 0.2s;
+  }
+  .ps-links a:hover {
+    border-color: var(--sl-color-accent);
+  }
+</style>

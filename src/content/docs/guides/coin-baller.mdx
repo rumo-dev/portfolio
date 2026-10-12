@@ -5,72 +5,29 @@ sidebar:
   order: 3
 ---
 
-import { Badge } from "@astrojs/starlight/components";
 import ModalVideo from "../../../components/ModalVideo.astro";
+import ProjectSummary from "../../../components/ProjectSummary.astro";
 
-<div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 2rem;">
-  <Badge text="チーム開発" variant="success" size="medium" />
-  <Badge text="DirectX11" variant="note" size="medium" />
-  <Badge text="C++" variant="danger" size="medium" />
-  <Badge text="Github" variant="caution" size="medium" />
-</div>
-
-## 作品概要
-
-スマートボールとピンボールの要素を融合した、3Dローグライクゲーム
+<ProjectSummary
+  kind="チーム制作 / 3D Roguelike（テーマ：自由）"
+  role="シェーダープログラマー（ポストエフェクトなど）"
+  period="38日間"
+  team="4人（プログラマー4人）"
+  stack={["DirectX 11", "C++", "GitHub Flow"]}
+  highlights={[
+    "衝突判定を空間分割で絞り込み、判定回数を従来の10%以下に削減して60FPSを維持",
+    "GitHub Flow とプルリクエストレビューで、main を常にビルドが通る状態に維持",
+    "ピン配置・難易度を外部データから読み込むデータ駆動設計",
+  ]}
+/>
 
 ## デモ動画
 
-クリックすると拡大して再生されます。
+<ModalVideo videoId="eAyFPevaKRA" title="Coin Baller" />
 
-<ModalVideo videoId="eAyFPevaKRA" title="Coin　Baller" />
+## 作品概要
 
-<table>
-  <thead>
-    <tr>
-      <th style="width: 30%">項目</th>
-      <th>内容</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>
-        <strong>開発環境</strong>
-      </td>
-      <td>DirectX11 / C++ / Github</td>
-    </tr>
-    <tr>
-      <td>
-        <strong>制作期間</strong>
-      </td>
-      <td>38日間</td>
-    </tr>
-    <tr>
-      <td>
-        <strong>制作人数</strong>
-      </td>
-      <td>4人 (プログラマー4人)</td>
-    </tr>
-    <tr>
-      <td>
-        <strong>自分の役割</strong>
-      </td>
-      <td>シェーダープログラマー</td>
-    </tr>
-    <tr>
-      <td>
-        <strong>担当パート</strong>
-      </td>
-      <td>ポストエフェクトなど</td>
-    </tr>
-    <tr>
-      <td>
-        <strong>テーマ</strong>
-      </td>
-      <td>自由</td>
-    </tr>
-  </tbody>
-</table>
+スマートボールとピンボールの要素を融合した、3Dローグライクゲームです。
 
 ---
 

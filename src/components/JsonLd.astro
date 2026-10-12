@@ -1,58 +1,56 @@
 ---
-// 1. 各ページからタイトルや説明文を上書きできるようにPropsを定義
+// 構造化データ (schema.org): 検索エンジン／SNSに「誰のどんなサイトか」を伝える
 export interface Props {
   title?: string;
   description?: string;
 }
 
-// デフォルト値を設定
 const {
-  title = "就活用ポートフォリオ",
-  description = "就活用のポートフォリオです。",
+  title = "丸毛 温仁 Portfolio",
+  description = "グラフィックスプログラマー志望・丸毛温仁のポートフォリオ。",
 } = Astro.props;
 
-// 2. URLの正規化（現在のページの正確なURLを動的に生成）
-const fallbackUrl = "https://rumo-dev.github.io/portfolio/";
-const siteUrl = Astro.site ? Astro.site.origin : fallbackUrl;
-const canonicalURL = new URL(Astro.url.pathname, siteUrl).href;
+// base（/portfolio）を含むサイトURLを組み立てる
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const origin = Astro.site ?? new URL("https://rumo-dev.github.io");
+const siteUrl = new URL(`${base}/`, origin).href;
+const canonicalURL = new URL(Astro.url.pathname, origin).href;
 
-// 3. schema.orgの定義 (@graphを使ってWebSiteとPersonを組み合わせる)
 const schema = {
   "@context": "https://schema.org",
   "@graph": [
-    // サイト全体の情報
     {
       "@type": "WebSite",
-      "@id": `${siteUrl}/#website`,
+      "@id": `${siteUrl}#website`,
       url: siteUrl,
-      name: "就活用ポートフォリオ", // サイト全体の固定名
-      description: "就活用のポートフォリオです。",
+      name: "丸毛 温仁 Portfolio",
+      inLanguage: "ja",
     },
-    // 現在のページと著者の情報
     {
-      "@type": "ProfilePage", // または WebPage
+      "@type": "ProfilePage",
       "@id": `${canonicalURL}#webpage`,
       url: canonicalURL,
       name: title,
-      description: description,
-      isPartOf: { "@id": `${siteUrl}/#website` },
-      about: {
-        "@type": "Person",
-        name: "あなたの名前", // 💡 ご自身の名前に変更してください
-        url: siteUrl,
-        sameAs: [
-          // 💡 必要に応じてGitHubやZennなどのリンクを追加すると信頼性が上がります
-          "https://github.com/rumo-dev",
-        ],
+      description,
+      isPartOf: { "@id": `${siteUrl}#website` },
+      about: { "@id": `${siteUrl}#person` },
+    },
+    {
+      "@type": "Person",
+      "@id": `${siteUrl}#person`,
+      name: "丸毛 温仁",
+      alternateName: ["マルモ ハルト", "Haruto Marumo"],
+      jobTitle: "グラフィックスプログラマー志望",
+      url: siteUrl,
+      alumniOf: {
+        "@type": "EducationalOrganization",
+        name: "ECCコンピュータ専門学校",
       },
+      knowsAbout: ["DirectX 11", "HLSL", "C++", "リアルタイムレンダリング", "PBR"],
+      sameAs: ["https://github.com/rumo-dev", "https://x.com/rumo_atfi"],
     },
   ],
 };
 ---
 
-<!-- is:inline をつけることでAstroのスクリプト最適化を回避し、安全に出力します -->
-<script
-  type="application/ld+json"
-  is:inline
-  set:html={JSON.stringify(schema)}
-/>
+<script type="application/ld+json" is:inline set:html={JSON.stringify(schema)} />

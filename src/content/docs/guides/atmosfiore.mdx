@@ -5,77 +5,37 @@ sidebar:
   order: 2
 ---
 
-import { Card, CardGrid, Badge, LinkCard } from "@astrojs/starlight/components";
+import { LinkCard } from "@astrojs/starlight/components";
 import ModalVideo from "../../../components/ModalVideo.astro";
+import ProjectSummary from "../../../components/ProjectSummary.astro";
 
-<div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 2rem;">
-  <Badge text="個人制作" variant="note" size="medium" />
-  <Badge text="DirectX 11" variant="caution" size="medium" />
-  <Badge text="C++" variant="danger" size="medium" />
-  <Badge text="HLSL" variant="success" size="medium" />
-</div>
+<ProjectSummary
+  kind="個人制作 / リアルタイム・グラフィックスデモ"
+  role="企画・エンジン設計・シェーダー実装のすべて"
+  period="2025年8月〜（継続開発中）"
+  team="1人（個人制作）"
+  stack={["C++", "DirectX 11", "HLSL", "自作エンジン"]}
+  highlights={[
+    "既存ゲームエンジンを使わず、DirectX 11 の描画基盤から自作",
+    "ディファードライティング・PBR・IBL・シャドウ・ポストプロセスを実装",
+    "各機能の実装を、コード付きの技術解説として公開",
+  ]}
+  links={[
+    { label: "GitHub（ソースコード）", href: "https://github.com/rumo-dev/AtmosFiore" },
+    { label: "技術解説の一覧", href: "../../reference/" },
+  ]}
+/>
+
+## デモ動画
+
+<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore" />
 
 ## 作品概要
 
 DirectX 11ベースの自作グラフィックスエンジンおよびカスタムシェーダーデモです。
+既存ゲームエンジンを介さず、DirectX 11ローレベル描画からフォトリアルな空気感を描き切ることを目標にしています。
 
-## デモ動画
-
-クリックすると拡大して再生されます。
-
-<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore" />
-
-<table>
-  <thead>
-    <tr>
-      <th style="width: 30%">項目</th>
-      <th>内容</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>
-        <strong>開発環境</strong>
-      </td>
-      <td>C++ / DirectX 11 / 自作エンジン / HLSL</td>
-    </tr>
-    <tr>
-      <td>
-        <strong>制作期間</strong>
-      </td>
-      <td>2025年8月 〜 現在（継続開発中）</td>
-    </tr>
-    <tr>
-      <td>
-        <strong>制作人数</strong>
-      </td>
-      <td>1人（個人制作）</td>
-    </tr>
-    <tr>
-      <td>
-        <strong>ジャンル</strong>
-      </td>
-      <td>リアルタイム・グラフィックスデモ</td>
-    </tr>
-    <tr>
-      <td>
-        <strong>主な実装機能</strong>
-      </td>
-      <td>
-        物理ベースレンダリング（PBR）シネマティックカラー
-      </td>
-    </tr>
-    <tr>
-      <td>
-        <strong>制作目標</strong>
-      </td>
-      <td>
-        既存ゲームエンジンを介さず、DirectX
-        11ローレベル描画からフォトリアルな空気感を描き切る
-      </td>
-    </tr>
-  </tbody>
-</table>
+主な実装機能は、物理ベースレンダリング（PBR）、ディファードライティング、各種光源（点・スポット・平行・面光源）、シャドウマッピング、IBL、大気散乱スカイ、フォグ、およびポストプロセス（Bloom / トーンマッピング / 自動露出 / 被写界深度 / 色収差 / レンズ歪曲 / ビネット）です。
 
 ---
 
