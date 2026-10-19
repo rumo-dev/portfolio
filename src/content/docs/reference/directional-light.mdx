@@ -2,17 +2,22 @@
 title: "技術解説：Directional Light（ディレクショナルライト）"
 description: 太陽光などの平行光源を、時刻連動のday-nightサイクルとピッチ・ヨーの手動操作で制御するディレクショナルライトの実装。
 sidebar:
+  label: "Directional Light"
   order: 7
 ---
 
 import { Aside } from "@astrojs/starlight/components";
 import ModalVideo from "../../../components/ModalVideo.astro";
+import TopicSummary from "../../../components/TopicSummary.astro";
+import PageEnd from "../../../components/PageEnd.astro";
+
+<TopicSummary />
 
 太陽光のように、シーン全体に対して常に同じ方向から降り注ぐ平行光を表現するため、AtmosFioreでは **Directional Light（ディレクショナルライト）** を実装しています。単なる光源パラメータの保持にとどまらず、時刻に応じて自動的に太陽の位置が変化するday-nightサイクルと、手動でのピッチ・ヨー操作を両立させているのが特徴です。
 
----
+## Directional Lightの基本概念
 
-## 📐 Directional Lightの基本概念
+<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
 
 ディレクショナルライトは位置を持たず、「方向」のみでシーン全体を照らします。AtmosFioreでは、この方向を2つの経路で計算できるようにしています。
 
@@ -21,15 +26,7 @@ import ModalVideo from "../../../components/ModalVideo.astro";
 
 両モードは`auto_rotate`フラグで排他的に切り替わり、時刻ベースが有効な間はGUI上の手動操作が無効化されます。
 
----
-
-## 🎥 デモ
-
-<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
-
----
-
-## 💻 C++実装
+## C++実装
 
 ```cpp
 class DirectionalLight : public LightBase
@@ -134,9 +131,7 @@ public:
 };
 ```
 
----
-
-## 🎨 処理の詳細
+## 処理の詳細
 
 ### 1. 時刻から太陽軌道への変換
 
@@ -164,9 +159,7 @@ float pitch_ui_deg = pitch + 90.0f;
 
 内部的な`pitch`は`-90°`を基準（真下）としていますが、GUIのダイヤル操作では「0°で真上」という直感的な表示にするため、表示用に90°のオフセットを加えて変換しています。
 
----
-
-## 🔧 実装のポイント
+## 実装のポイント
 
 ### 1. 自動・手動の排他制御
 
@@ -208,3 +201,5 @@ if (NoL > 0.0f)
 <Aside type="caution">
   `day_duration`を極端に短くすると、`tick()`内の`time_of_day`が1フレームで大きく進み、太陽の動きがカクついて見えることがあります。滑らかな昼夜遷移を保つには、フレームレートに対して十分な`day_duration`を確保してください。
 </Aside>
+
+<PageEnd />

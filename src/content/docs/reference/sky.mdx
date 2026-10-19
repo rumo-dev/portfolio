@@ -2,17 +2,22 @@
 title: "技術解説：Sky（大気散乱・プロシージャルスカイ）"
 description: レイマーチングによる大気散乱シミュレーションと、雲・星・オーロラをプロシージャルに合成するスカイレンダリング。
 sidebar:
+  label: "Sky"
   order: 12
 ---
 
 import { Aside } from "@astrojs/starlight/components";
 import ModalVideo from "../../../components/ModalVideo.astro";
+import TopicSummary from "../../../components/TopicSummary.astro";
+import PageEnd from "../../../components/PageEnd.astro";
+
+<TopicSummary />
 
 窓の外に広がる空を描くため、AtmosFioreでは **Sky** をポストエフェクトとして実装しています。テクスチャに頼らず、レイリー散乱・ミー散乱に基づく大気散乱シミュレーション、FBMノイズによる雲、そしてプロシージャルな星・オーロラをすべてシェーダー内でリアルタイム生成します。
 
----
+## Skyの基本概念
 
-## 📐 Skyの基本概念
+<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
 
 深度バッファを参照して「背景（空）とみなせるピクセルのみ」にレイマーチングベースの大気散乱計算を適用し、シーンのジオメトリと自然に合成します。
 
@@ -23,15 +28,7 @@ import ModalVideo from "../../../components/ModalVideo.astro";
 3. **大気散乱の積分**：レイリー散乱・ミー散乱をステップごとに積分（`scatter()`）
 4. **雲・星・オーロラの合成**：FBMノイズによる雲、プロシージャルな星、オーロラエフェクトを加算
 
----
-
-## 🎥 デモ
-
-<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
-
----
-
-## 💻 C++実装
+## C++実装
 
 ```cpp
 class Sky
@@ -79,9 +76,7 @@ void Sky::make(ID3D11DeviceContext* immediate_context, ID3D11ShaderResourceView*
 }
 ```
 
----
-
-## 💻 HLSL実装
+## HLSL実装
 
 ### 深度判定によるスキップ
 
@@ -183,9 +178,7 @@ float fnoise(float3 p, float t)
 }
 ```
 
----
-
-## 🎨 処理の詳細
+## 処理の詳細
 
 ### 1. 物理ベース大気散乱モデル
 
@@ -225,9 +218,7 @@ else
 }
 ```
 
----
-
-## 🔧 実装のポイント
+## 実装のポイント
 
 ### 1. テクスチャレスなプロシージャル生成
 
@@ -254,3 +245,5 @@ bool isForeground = isReversed
 <Aside type="caution">
   レイマーチングのステップ数（`steps` / `stepss` = 16）を増やすとより滑らかな散乱表現になりますが、GPU負荷が線形に増加するため注意が必要です。
 </Aside>
+
+<PageEnd />

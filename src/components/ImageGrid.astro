@@ -4,10 +4,21 @@ interface Props {
   isComparison?: boolean;
 }
 
-const { images, isComparison = false } = Astro.props;
+const { images: allImages, isComparison = false } = Astro.props;
+// 仮画像（dummy*）はそのまま公開しない。実画像に差し替えるまでは「準備中」表示にする
+const images = allImages.filter((src) => !/dummy/i.test(src));
+const isPlaceholder = images.length === 0;
 ---
 
-<div class={`image-container ${isComparison ? 'grid-2' : 'grid-1'}`}>
+{
+  isPlaceholder && (
+    <div class="img-pending not-content" role="note">
+      <strong>デモ画像は準備中です</strong>
+      <span>実装コードと解説は下記をご覧ください。</span>
+    </div>
+  )
+}
+<div class={`image-container ${isComparison ? 'grid-2' : 'grid-1'}`} hidden={isPlaceholder}>
   {
     images.map((src) => (
       <div class="image-wrapper">
@@ -68,4 +79,20 @@ const { images, isComparison = false } = Astro.props;
     grid-template-columns: 1fr;
   }
 }
+</style>
+<style>
+.img-pending {
+  margin: 1.2rem 0;
+  padding: 0.9rem 1.1rem;
+  border: 1px dashed var(--sl-color-hairline-light);
+  border-radius: 10px;
+  background: var(--sl-color-bg-card);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.8rem;
+  align-items: baseline;
+  font-size: 0.9rem;
+  color: var(--sl-color-text-muted);
+}
+.img-pending strong { color: var(--sl-color-text); }
 </style>

@@ -2,6 +2,7 @@
 title: "技術解説：Shadow Mapping（シャドウマッピング）"
 description: 直交投影＋PCFのディレクショナルシャドウと、双放物面マッピングによるポイントライトシャドウ、スクリーンスペースコンタクトシャドウを実装。
 sidebar:
+  label: "Shadow Mapping"
   order: 10
 ---
 
@@ -9,12 +10,23 @@ import { Aside } from "@astrojs/starlight/components";
 import ImgComparison from "../../../components/ImgComparison.astro";
 import dummyImg from "../../../assets/dummy00.png";
 import houstonImg from "../../../assets/dummy01.png";
+import TopicSummary from "../../../components/TopicSummary.astro";
+import PageEnd from "../../../components/PageEnd.astro";
+
+<TopicSummary />
 
 物体が光を遮ることで生まれる影を再現するため、AtmosFioreでは **Shadow Mapping** をライト種別ごとに実装しています。ディレクショナルライトには直交投影＋PCF（Percentage Closer Filtering）、ポイントライトにはキューブマップの代わりに軽量な **双放物面マッピング（Dual Paraboloid Mapping）** を採用し、さらに近距離のディテールを補う **スクリーンスペースコンタクトシャドウ** も備えています。
 
----
+## Shadow Mappingの基本概念
 
-## 📐 Shadow Mappingの基本概念
+シャドウの有無をスライダーで比較できます。
+
+<ImgComparison
+  leftImage={dummyImg.src}
+  rightImage={houstonImg.src}
+  altLeft="シャドウなし"
+  altRight="シャドウあり"
+/>
 
 シャドウマッピングは「ライト視点から深度マップを生成し、通常のカメラ視点で描画する際にその深度マップと比較して、遮蔽されていれば影として扱う」という2パス構成の手法です。
 
@@ -44,22 +56,7 @@ class shadow
 };
 ```
 
----
-
-## 🎚️ 比較デモ
-
-シャドウの有無をスライダーで比較できます。
-
-<ImgComparison
-  leftImage={dummyImg.src}
-  rightImage={houstonImg.src}
-  altLeft="シャドウなし"
-  altRight="シャドウあり"
-/>
-
----
-
-## 💻 C++実装
+## C++実装
 
 ### シャドウマップ本体（深度専用テクスチャ）
 
@@ -219,9 +216,7 @@ void shadow::make_shadow_begin(PointShadowFace face)
 }
 ```
 
----
-
-## 💻 HLSL実装
+## HLSL実装
 
 ### ディレクショナルシャドウ：3x3 PCFによるソフトシャドウ
 
@@ -363,9 +358,7 @@ float CalculateDeferredWorldContactShadow(
 }
 ```
 
----
-
-## 🎨 処理の詳細
+## 処理の詳細
 
 ### 1. 双放物面マッピングによる全方位シャドウの簡略化
 
@@ -383,9 +376,7 @@ float bias = max(0.005f * (1.0f - saturate(dot(normal, light_dir))), 0.0005f);
 
 シャドウマップは解像度（2048×2048）に依存するため近距離の細かい接触影の表現が苦手です。`CalculateDeferredWorldContactShadow`はG-Bufferの位置・法線からスクリーンスペースでレイマーチングを行い、シャドウマップでは表現しきれない細かい自己遮蔽（コンタクトシャドウ）を補完します。
 
----
-
-## 🔧 実装のポイント
+## 実装のポイント
 
 ### 1. Typelessフォーマットによる DSV/SRV 両立
 
@@ -411,3 +402,5 @@ bool use_shadow = point_shadow_options.y > 0.0f && light_index == 0 && ...
 <Aside type="caution">
   シャドウマップ解像度（2048×2048）や`light_view_size`（直交投影範囲）を変更する際は、シャドウの精度とカバー範囲がトレードオフになる点に注意してください。範囲を広げるほど1テクセルあたりのワールド距離が大きくなり、シャドウのエッジが粗くなります。
 </Aside>
+
+<PageEnd />

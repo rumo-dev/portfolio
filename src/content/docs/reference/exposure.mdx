@@ -2,6 +2,7 @@
 title: "技術解説：Exposure（T値ベース露出）"
 description: T値・シャッタースピード・ISOから物理的なEV100を算出し、HDRバッファに線形露出スケールを適用するポストエフェクト。
 sidebar:
+  label: "Exposure"
   order: 15
 ---
 
@@ -9,25 +10,14 @@ import { Aside } from "@astrojs/starlight/components";
 import ImgComparison from "../../../components/ImgComparison.astro";
 import dummyImg from "../../../assets/dummy00.png";
 import houstonImg from "../../../assets/dummy01.png";
+import TopicSummary from "../../../components/TopicSummary.astro";
+import PageEnd from "../../../components/PageEnd.astro";
+
+<TopicSummary />
 
 実カメラの露出計算を再現するため、AtmosFioreでは **Exposure（T値ベース露出）** を実装しています。写真撮影で使われるT値・シャッタースピード・ISO感度から標準的な **EV100** を算出し、シーンのHDRカラーに線形な露出スケールを適用する、トーンマッピングとは独立した単独ポストエフェクトです。
 
----
-
-## 📐 Exposureの基本概念
-
-カメラの露出は、絞り（T値）・シャッタースピード・ISO感度という3つのパラメータで決まります。これらを写真業界標準の指標である **EV100**（ISO100基準の露出値）に変換し、そこから線形露出スケールを導出します。
-
-### 処理フロー
-
-1. **T値・シャッタースピード・ISOからEV100を計算**
-2. **EV補正値（EV_Compensation）を加算**
-3. **EV100を線形露出スケールに変換**
-4. **HDRカラーにスケールを乗算**（トーンマップ・sRGB変換は行わず後段に委譲）
-
----
-
-## 🎚️ 比較デモ
+## Exposureの基本概念
 
 露出調整の前後をスライダーで比較できます。
 
@@ -38,9 +28,16 @@ import houstonImg from "../../../assets/dummy01.png";
   altRight="露出調整後"
 />
 
----
+カメラの露出は、絞り（T値）・シャッタースピード・ISO感度という3つのパラメータで決まります。これらを写真業界標準の指標である **EV100**（ISO100基準の露出値）に変換し、そこから線形露出スケールを導出します。
 
-## 💻 C++実装
+### 処理フロー
+
+1. **T値・シャッタースピード・ISOからEV100を計算**
+2. **EV補正値（EV_Compensation）を加算**
+3. **EV100を線形露出スケールに変換**
+4. **HDRカラーにスケールを乗算**（トーンマップ・sRGB変換は行わず後段に委譲）
+
+## C++実装
 
 ```cpp
 /**
@@ -88,9 +85,7 @@ private:
 };
 ```
 
----
-
-## 💻 HLSL実装
+## HLSL実装
 
 ```hlsl
 #include "constants.hlsli"
@@ -142,9 +137,7 @@ float4 main(VS_OUT pin) : SV_TARGET
 }
 ```
 
----
-
-## 🎨 処理の詳細
+## 処理の詳細
 
 ### 1. T値とF値の違い
 
@@ -162,9 +155,7 @@ EV100 = log2(T² / shutterSpeed) - log2(ISO / 100)
 
 `L_max = 1.2 * 2^EV100` は、EV100から「シーン内で白として扱う最大輝度」を求める標準的な近似式です。この逆数を線形HDRカラーに乗算することで、写真的に適正な露出を再現します。
 
----
-
-## 🔧 実装のポイント
+## 実装のポイント
 
 ### 1. トーンマッピングとの責務分離
 
@@ -186,3 +177,5 @@ T値・シャッタースピード・ISOといったカメラパラメータは�
   出力は依然として線形HDR（R16G16B16A16_FLOAT）です。sRGBやガンマ補正はTone
   Mapping段で行われるため、Exposure単体の出力をそのままディスプレイに表示すると露出過多に見えることがあります。
 </Aside>
+
+<PageEnd />

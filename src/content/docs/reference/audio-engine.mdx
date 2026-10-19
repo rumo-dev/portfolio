@@ -2,17 +2,20 @@
 title: "技術解説：Audio Engine（オーディオエンジン）"
 description: XAudio2 / X3DAudioによるBGM・SEの多重再生と、JSON管理のエフェクトチェーン・3D空間オーディオを実装したオーディオシステム。
 sidebar:
+  label: "Audio Engine"
   order: 22
 ---
 
 import { Aside } from "@astrojs/starlight/components";
 import ModalVideo from "../../../components/ModalVideo.astro";
+import TopicSummary from "../../../components/TopicSummary.astro";
+import PageEnd from "../../../components/PageEnd.astro";
+
+<TopicSummary />
 
 ゲーム内のBGM・SE再生を一元管理するため、AtmosFioreでは **XAudio2 / X3DAudio** ベースの `AudioSystem` を実装しています。音源をキー名でマップ登録して再生する疎結合な設計に加え、リバーブ・エコー・EQなどのエフェクトチェーンをJSONで管理し、imnodesによるノードグラフGUIでリアルタイム編集できるのが特徴です。
 
----
-
-## 📐 Audio Engineの基本概念
+## Audio Engineの基本概念
 
 `AudioSystem`は、レンダリングパイプラインとは独立したシングルトンとして動作し、毎フレームの`Update()`呼び出しで3D音源のパン・減衰・ドップラー効果を再計算します。音源データとエフェクトチェーンは実行時にJSONから読み込まれ、ホットリロードにも対応しています。
 
@@ -44,15 +47,11 @@ struct AudioPlayParam
 
 音源（何を鳴らすか）とエフェクトチェーン（どう加工するか）を分離することで、同じ効果音に異なるリバーブ設定を切り替えて適用したり、BGMごとに異なる空間の響きを持たせたりすることが、コード変更なしにJSON編集だけで可能になっています。
 
----
-
 //## 🎥 デモ
 
 //<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
 
----
-
-## 💻 C++実装：BGM/SE再生API
+## C++実装：BGM/SE再生API
 
 ```cpp
 class AudioSystem
@@ -101,9 +100,7 @@ private:
 
 BGM/SEはそれぞれ専用のサブミックスボイス（`m_pBGMSubmix` / `m_pSESubmix`）に出力されるため、`SetBGMMasterVolume()` / `SetSEMasterVolume()` でカテゴリごとに一括音量調整できます。
 
----
-
-## 💻 C++実装：X3DAudioによる3D空間定位
+## C++実装：X3DAudioによる3D空間定位
 
 ```cpp
 void AudioSystem::Update3DAudio(int /*voiceId*/, PlayingVoice& voice)
@@ -138,9 +135,7 @@ void AudioSystem::Update3DAudio(int /*voiceId*/, PlayingVoice& voice)
 }
 ```
 
----
-
-## 🔧 エフェクトチェーン（JSON管理）
+## エフェクトチェーン（JSON管理）
 
 各音源には、リバーブ・エコー・EQ・フィルタなどを直列に接続した「エフェクトチェーン」を割り当てられます。チェーンの構成はJSONで永続化され、imnodesのノードグラフエディタから視覚的に編集できます。
 
@@ -180,9 +175,7 @@ enum class AudioEffectType
 };
 ```
 
----
-
-## 🎨 処理の詳細
+## 処理の詳細
 
 ### 1. BGM/SEの多重再生とボイス管理
 
@@ -203,3 +196,5 @@ enum class AudioEffectType
 <Aside type="caution">
   X3DAudioの計算はリスナー・エミッタの位置更新に依存するため、`SetListenerPosition()` / `SetListenerOrientation()`をカメラ更新と同じフレームで呼び出さないと定位がずれる点に注意が必要です。
 </Aside>
+
+<PageEnd />

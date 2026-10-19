@@ -1,0 +1,145 @@
+---
+// 各ページ末尾の導線: 関連ページ（技術解説）／他の作品（作品ページ）＋連絡先
+import { topicBySlug, topics } from "../data/topics";
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const path = Astro.url.pathname;
+const slug = path.split("/").filter(Boolean).pop() ?? "";
+const isReference = path.includes("/reference/");
+const isGuide = path.includes("/guides/");
+
+const works = [
+  { slug: "atmosfiore", title: "AtmosFiore", kind: "個人制作 / 自作エンジン", note: "DirectX 11 描画基盤とシェーダーを一人で実装" },
+  { slug: "coin-baller", title: "Coin Baller", kind: "チーム制作 / 3D Roguelike", note: "シェーダー担当・衝突判定の最適化" },
+  { slug: "figavoid", title: "FIGAVOID", kind: "チーム制作 / 2D Roguelike", note: "メインプログラマー・GitHub Flow の運用" },
+];
+
+const related = isReference
+  ? (topicBySlug(slug)?.related ?? [])
+      .map((s) => topics.find((t) => t.slug === s))
+      .filter(Boolean)
+  : [];
+const otherWorks = isGuide ? works.filter((w) => w.slug !== slug) : [];
+
+const EMAIL = "marumo.h.job@gmail.com";
+---
+
+<section class="page-end not-content" aria-label="次に見るページ">
+  {
+    related.length > 0 && (
+      <div>
+        <h2 class="pe-title">関連する技術解説</h2>
+        <ul class="pe-grid">
+          {related.map((t) => (
+            <li>
+              <a href={`${base}/reference/${t!.slug}/`}>
+                <strong>{t!.name}</strong>
+                <span>{t!.summary}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )
+  }
+  {
+    otherWorks.length > 0 && (
+      <div>
+        <h2 class="pe-title">ほかの制作実績</h2>
+        <ul class="pe-grid">
+          {otherWorks.map((w) => (
+            <li>
+              <a href={`${base}/guides/${w.slug}/`}>
+                <strong>{w.title}</strong>
+                <em>{w.kind}</em>
+                <span>{w.note}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )
+  }
+  <div class="pe-cta">
+    <p>
+      <strong>丸毛 温仁</strong>（グラフィックスプログラマー志望・2028年3月卒業見込み）<br />
+      ご質問・面談のご相談はお気軽にどうぞ。
+    </p>
+    <div class="pe-links">
+      <a class="pe-primary" href={`mailto:${EMAIL}`}>メールで連絡する</a>
+      <a href={`${base}/`}>トップページ</a>
+      <a href={`${base}/reference/`}>技術解説の一覧</a>
+    </div>
+  </div>
+</section>
+
+<style>
+  .page-end {
+    margin-top: 3.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--sl-color-hairline-light);
+    display: grid;
+    gap: 1.8rem;
+  }
+  .pe-title {
+    margin: 0 0 0.8rem;
+    font-size: 1.05rem;
+    font-weight: 700;
+    border: none;
+  }
+  .pe-grid {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.8rem;
+  }
+  .pe-grid a {
+    display: grid;
+    gap: 0.2rem;
+    height: 100%;
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--sl-color-hairline-light);
+    border-radius: 10px;
+    background: var(--sl-color-bg-card);
+    text-decoration: none;
+    color: var(--sl-color-text);
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .pe-grid a:hover {
+    border-color: var(--sl-color-accent);
+    transform: translateY(-2px);
+  }
+  .pe-grid strong { font-size: 0.98rem; }
+  .pe-grid em { font-style: normal; font-size: 0.75rem; color: var(--sl-color-accent); font-weight: 700; }
+  .pe-grid span { font-size: 0.85rem; color: var(--sl-color-text-muted); line-height: 1.5; }
+  .pe-cta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.2rem 1.4rem;
+    border-radius: 12px;
+    border: 1px solid var(--sl-color-hairline-light);
+    background: var(--sl-color-bg-card);
+  }
+  .pe-cta p { margin: 0; font-size: 0.92rem; line-height: 1.7; }
+  .pe-links { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+  .pe-links a {
+    padding: 0.45rem 0.95rem;
+    border-radius: 8px;
+    border: 1px solid var(--sl-color-hairline-light);
+    color: var(--sl-color-text);
+    text-decoration: none;
+    font-size: 0.88rem;
+    font-weight: 600;
+  }
+  .pe-links a:hover { border-color: var(--sl-color-accent); }
+  .pe-links .pe-primary {
+    background: var(--sl-color-accent);
+    border-color: var(--sl-color-accent);
+    color: #1c1100;
+  }
+</style>

@@ -2,6 +2,7 @@
 title: "技術解説：Chromatic Aberration（色収差）"
 description: 波長ごとの屈折率の違いによるRGBチャンネルのズレを再現する、物理ベース連動の色収差ポストエフェクト。
 sidebar:
+  label: "Chromatic Aberration"
   order: 16
 ---
 
@@ -9,24 +10,14 @@ import { Aside } from "@astrojs/starlight/components";
 import ImgComparison from "../../../components/ImgComparison.astro";
 import dummyImg from "../../../assets/dummy00.png";
 import houstonImg from "../../../assets/dummy01.png";
+import TopicSummary from "../../../components/TopicSummary.astro";
+import PageEnd from "../../../components/PageEnd.astro";
+
+<TopicSummary />
 
 現実のレンズでは波長によって屈折率が異なるため、RGBチャンネルが画面端に向かって放射状にズレる「横方向色収差」が発生します。AtmosFioreの **Chromatic Aberration** は、この現象をカメラの焦点距離・F値と連動させて物理的にもっともらしく再現します。
 
----
-
-## 📐 Chromatic Aberrationの基本概念
-
-レンズの色収差は、広角（短焦点距離）ほど、また開放絞り（小さいF値）ほど強く現れる傾向があります。AtmosFioreはこの物理的傾向をシェーダー内で近似し、RGB各チャンネルのUVサンプリング位置を中心からの距離に応じてずらすことで色収差を表現します。
-
-### 物理ベース連動
-
-- **FocalLength**：広角（短焦点）ほど収差が大きい → `strength_from_focal_length()`
-- **FNumber**：開放絞りほど収差が大きい → `strength_from_fnumber()`
-- **intensity**：アーティストによる手動オフセット
-
----
-
-## 🎚️ 比較デモ
+## Chromatic Aberrationの基本概念
 
 色収差の有無をスライダーで比較できます。
 
@@ -37,9 +28,15 @@ import houstonImg from "../../../assets/dummy01.png";
   altRight="色収差オン"
 />
 
----
+レンズの色収差は、広角（短焦点距離）ほど、また開放絞り（小さいF値）ほど強く現れる傾向があります。AtmosFioreはこの物理的傾向をシェーダー内で近似し、RGB各チャンネルのUVサンプリング位置を中心からの距離に応じてずらすことで色収差を表現します。
 
-## 💻 C++実装
+### 物理ベース連動
+
+- **FocalLength**：広角（短焦点）ほど収差が大きい → `strength_from_focal_length()`
+- **FNumber**：開放絞りほど収差が大きい → `strength_from_fnumber()`
+- **intensity**：アーティストによる手動オフセット
+
+## C++実装
 
 ```cpp
 /**
@@ -136,9 +133,7 @@ void ChromaticAberration::make(ID3D11DeviceContext* immediate_context, ID3D11Sha
 }
 ```
 
----
-
-## 💻 HLSL実装
+## HLSL実装
 
 ```hlsl
 // chromatic_aberration_ps.hlsl
@@ -205,9 +200,7 @@ float4 main(VS_OUT pin) : SV_TARGET
 }
 ```
 
----
-
-## 🎨 処理の詳細
+## 処理の詳細
 
 ### 1. 半径の2乗による端集中
 
@@ -221,9 +214,7 @@ float4 main(VS_OUT pin) : SV_TARGET
 
 `phys_scale = focal_scale(FocalLength) * fnum_scale(FNumber)` により、広角かつ開放絞りという「収差が最も強く出る条件」が重なったときに最大の強度になるよう設計されています。
 
----
-
-## 🔧 実装のポイント
+## 実装のポイント
 
 ### 1. CPU側とGPU側の役割分担
 
@@ -240,3 +231,5 @@ CPU側（C++）は `intensity` によるアーティストスケールのみを�
 <Aside type="caution">
   収差量が大きすぎるとエッジのちらつき（アーティファクト）が目立ちやすくなるため、`intensity`は[0..3]程度の範囲での調整を推奨します。
 </Aside>
+
+<PageEnd />

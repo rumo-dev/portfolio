@@ -1,0 +1,145 @@
+---
+// 技術解説ページの冒頭に置く「30秒で分かる要点カード」
+// 内容は src/data/topics.ts から、読了目安・コード量などは本文から自動で算出します。
+import { topicBySlug, categories } from "../data/topics";
+
+const slug = Astro.url.pathname.split("/").filter(Boolean).pop() ?? "";
+const topic = topicBySlug(slug);
+const route = (Astro.locals as any).starlightRoute;
+const body: string = route?.entry?.body ?? "";
+const toc: { text: string; slug: string; depth: number }[] = (route?.toc?.items ?? []).flatMap(
+  (i: any) => [i, ...(i.children ?? [])],
+);
+
+// ---- 本文から自動算出 ----
+const codeBlocks = [...body.matchAll(/```(\w+)?[^\n]*\n([\s\S]*?)```/g)];
+const lines = (lang: string[]) =>
+  codeBlocks
+    .filter((m) => lang.includes((m[1] ?? "").toLowerCase()))
+    .reduce((n, m) => n + m[2].split("\n").filter((l) => l.trim()).length, 0);
+const cppLines = lines(["cpp", "c++", "c"]);
+const hlslLines = lines(["hlsl"]);
+const prose = body
+  .replace(/```[\s\S]*?```/g, "")
+  .replace(/^import .*$/gm, "")
+  .replace(/<[^>]+>/g, "")
+  .replace(/\s+/g, "");
+const minutes = Math.max(1, Math.round(prose.length / 600));
+const hasCompare = /<ImgComparison/.test(body) && !/dummy/.test(body.match(/<ImgComparison[\s\S]*?\/>/)?.[0] ?? "");
+const hasDemo = /<ImgComparison|<ImageGrid/.test(body);
+const hasDecision = /<DesignDecision/.test(body);
+
+const find = (word: string) => toc.find((t) => t.text.includes(word));
+const jumps = [
+  ["デモ", hasDemo ? (find("基本概念") ?? find("設計思想")) : undefined],
+  ["設計判断", find("設計判断")],
+  ["実装のポイント", find("実装のポイント")],
+].filter(([, h]) => h) as [string, { slug: string }][];
+---
+
+{
+  topic && (
+    <aside class="topic-summary not-content" aria-label="この解説の要点">
+      <p class="ts-kicker">
+        <span>{categories[topic.category].label}</span>
+        <span class="ts-sep">／</span>
+        <span>30秒で分かる要点</span>
+      </p>
+      <p class="ts-lead">{topic.summary}</p>
+      <ul class="ts-points">
+        {topic.points.map((p) => <li>{p}</li>)}
+      </ul>
+      <ul class="ts-meta">
+        <li>読了目安 約{minutes}分<small>（コード除く）</small></li>
+        {cppLines > 0 && <li>C++ {cppLines}行</li>}
+        {hlslLines > 0 && <li>HLSL {hlslLines}行</li>}
+        {hasCompare && <li>ON/OFF 比較デモあり</li>}
+        {hasDecision && <li>設計判断あり</li>}
+      </ul>
+      {topic.basis && <p class="ts-basis">参考: {topic.basis}</p>}
+      {
+        jumps.length > 0 && (
+          <p class="ts-jump">
+            忙しい方へ:
+            {jumps.map(([label, h]) => (
+              <a href={`#${h.slug}`}>{label} →</a>
+            ))}
+          </p>
+        )
+      }
+    </aside>
+  )
+}
+
+<style>
+  .topic-summary {
+    margin: 0 0 2rem;
+    padding: 1.2rem 1.4rem 1.1rem;
+    border: 1px solid var(--sl-color-hairline-light);
+    border-left: 4px solid var(--sl-color-accent);
+    border-radius: 12px;
+    background: var(--sl-color-bg-card);
+    display: grid;
+    gap: 0.8rem;
+  }
+  .ts-kicker {
+    margin: 0;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--sl-color-accent);
+  }
+  .ts-sep { margin: 0 0.35rem; opacity: 0.6; }
+  .ts-lead {
+    margin: 0;
+    font-size: 1.08rem;
+    font-weight: 700;
+    line-height: 1.6;
+    color: var(--sl-color-text);
+  }
+  .ts-points {
+    margin: 0;
+    padding-left: 1.2rem;
+    display: grid;
+    gap: 0.3rem;
+    color: var(--sl-color-text);
+    font-size: 0.95rem;
+  }
+  .ts-meta {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  .ts-meta li {
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 0.12rem 0.65rem;
+    border-radius: 999px;
+    border: 1px solid var(--sl-color-hairline);
+    background: rgba(245, 158, 11, 0.1);
+    color: var(--sl-color-text);
+  }
+  .ts-meta small { font-weight: 400; color: var(--sl-color-text-muted); margin-left: 0.2rem; }
+  .ts-basis {
+    margin: 0;
+    font-size: 0.82rem;
+    color: var(--sl-color-text-muted);
+  }
+  .ts-jump {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--sl-color-text-muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1rem;
+  }
+  .ts-jump a {
+    font-weight: 600;
+    color: var(--sl-color-accent);
+    text-decoration: none;
+  }
+  .ts-jump a:hover { text-decoration: underline; }
+</style>

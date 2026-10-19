@@ -2,6 +2,7 @@
 title: "技術解説：Tone Mapping（トーンマッピング）"
 description: HDRレンダリングされた高輝度カラーをSDRディスプレイに適切に表示するためのトーンマッピング。34種類のアルゴリズムを実装。
 sidebar:
+  label: "Tone Mapping"
   order: 21
 ---
 
@@ -10,25 +11,14 @@ import ImgComparison from "../../../components/ImgComparison.astro";
 import dummyImg from "../../../assets/dummy00.png";
 import houstonImg from "../../../assets/dummy01.png";
 import DesignDecision from "../../../components/DesignDecision.astro";
+import TopicSummary from "../../../components/TopicSummary.astro";
+import PageEnd from "../../../components/PageEnd.astro";
+
+<TopicSummary />
 
 Adaptationで露出調整済みのHDRカラーを最終的にディスプレイへ表示するため、AtmosFioreでは **Tone Mapping** を実装しています。ACES・Reinhard・AgX・GT（Uchimura）など、実に34種類のアルゴリズムを実行時に切り替えられるのが最大の特徴です。
 
----
-
-## 📐 Tone Mappingの基本概念
-
-HDRレンダリングでは輝度値が1.0を超える（真っ白より明るい）ピクセルが多数存在します。これをそのままSDRディスプレイ（0.0〜1.0）に出力すると白飛びが発生するため、非線形な圧縮関数（トーンカーブ）を通して滑らかにクランプする必要があります。
-
-### 処理フロー
-
-1. **Exposure適用済みHDRカラーの入力**
-2. **選択したアルゴリズムでトーンマッピング**
-3. **ガンマ補正**（`pow(color, 1.0 / gamma)`）
-4. **SDRバッファ（R8G8B8A8_UNORM）への出力**
-
----
-
-## 🎚️ 比較デモ
+## Tone Mappingの基本概念
 
 トーンマッピングの適用前後をスライダーで比較できます。
 
@@ -39,9 +29,16 @@ HDRレンダリングでは輝度値が1.0を超える（真っ白より明る�
   altRight="トーンマッピング後"
 />
 
----
+HDRレンダリングでは輝度値が1.0を超える（真っ白より明るい）ピクセルが多数存在します。これをそのままSDRディスプレイ（0.0〜1.0）に出力すると白飛びが発生するため、非線形な圧縮関数（トーンカーブ）を通して滑らかにクランプする必要があります。
 
-## 🧭 設計判断：なぜこの手法か
+### 処理フロー
+
+1. **Exposure適用済みHDRカラーの入力**
+2. **選択したアルゴリズムでトーンマッピング**
+3. **ガンマ補正**（`pow(color, 1.0 / gamma)`）
+4. **SDRバッファ（R8G8B8A8_UNORM）への出力**
+
+## 設計判断：なぜこの手法か
 
 <DesignDecision
   chosen="ACES を既定にし、34種類のアルゴリズムを実行時に切り替えて比較できる構成にした"
@@ -53,9 +50,7 @@ HDRレンダリングでは輝度値が1.0を超える（真っ白より明る�
   ]}
 />
 
----
-
-## 💻 C++実装
+## C++実装
 
 ```cpp
 class ToneMapping
@@ -113,9 +108,7 @@ private:
 };
 ```
 
----
-
-## 💻 HLSL実装
+## HLSL実装
 
 ### メインシェーダー（ディスパッチャ）
 
@@ -193,9 +186,7 @@ float3 ToneMap_ReinhardExtended(float3 x)
 
 `ApplyToneMapping()` 内部では `mapping_type` に応じて上記のような34個の関数を分岐呼び出しし、GT/Uchimuraでは `shoulder` / `max_white`、CustomCurveでは `shoulder` / `linear_strength` / `linear_angle` / `toe_strength` など、アルゴリズムごとに異なるパラメータセットを参照します。
 
----
-
-## 🎨 処理の詳細
+## 処理の詳細
 
 ### 1. アルゴリズムの選択指針
 
@@ -217,9 +208,7 @@ float3 ToneMap_ReinhardExtended(float3 x)
 
 トーンマッピング関数自体は線形空間での圧縮のみを担当し、最終行の `pow(color, 1.0 / gamma)` でsRGB相当のガンマ補正を独立して適用しています。
 
----
-
-## 🔧 実装のポイント
+## 実装のポイント
 
 ### 1. 34アルゴリズムの一元管理
 
@@ -240,3 +229,5 @@ Tone Mappingは必ずAdaptation（自動露出）の後、パイプラインの�
   Tone
   MappingをAdaptationより前段に配置すると、自動露出が正しく機能しません（露出調整はトーンマッピング前の線形HDR値に対して行う必要があるため）。
 </Aside>
+
+<PageEnd />

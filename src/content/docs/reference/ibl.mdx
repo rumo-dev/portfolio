@@ -2,6 +2,7 @@
 title: "技術解説：IBL（Image-Based Lighting）"
 description: HDR環境マップ・拡散IEM・スペキュラPMREM・BRDF LUTの4テクスチャによる物理ベース環境光のシミュレーション。
 sidebar:
+  label: "IBL"
   order: 9
 ---
 
@@ -9,12 +10,23 @@ import { Aside } from "@astrojs/starlight/components";
 import ImgComparison from "../../../components/ImgComparison.astro";
 import dummyImg from "../../../assets/dummy00.png";
 import houstonImg from "../../../assets/dummy01.png";
+import TopicSummary from "../../../components/TopicSummary.astro";
+import PageEnd from "../../../components/PageEnd.astro";
+
+<TopicSummary />
 
 窓から差し込む環境光のバウンスを物理的に正しく表現するため、AtmosFioreでは **IBL（Image-Based Lighting）** を実装しています。HDR環境マップから事前計算した拡散IEM（Irradiance Environment Map）とスペキュラPMREM（Prefiltered Mipmapped Radiance Environment Map）、BRDF LUTの4テクスチャを用い、Split-Sum近似によってリアルタイムに環境光を積分します。
 
----
+## IBLの基本概念
 
-## 📐 IBLの基本概念
+IBLの有無をスライダーで比較できます。
+
+<ImgComparison
+  leftImage={dummyImg.src}
+  rightImage={houstonImg.src}
+  altLeft="IBLなし"
+  altRight="IBLあり"
+/>
 
 直接光源（Directional/Point/Spot/Area Light）だけでは、周囲環境からの間接的な光のバウンス（アンビエント項）を表現できません。IBLは、周囲環境をキャプチャしたHDR画像を「無数の点光源の集合」とみなし、その積分をあらかじめオフラインで計算しておくことでリアルタイムに近似する手法です。
 
@@ -37,22 +49,7 @@ enum TextureType {
 | Specular PMREM | Roughnessごとにミップレベルへ事前ブラーした鏡面環境マップ | 鏡面反射（GGX）成分                  |
 | BRDF LUT (GGX) | NoVとRoughnessを軸にしたフレネル・幾何減衰の積分結果      | Split-Sum近似の第2項                 |
 
----
-
-## 🎚️ 比較デモ
-
-IBLの有無をスライダーで比較できます。
-
-<ImgComparison
-  leftImage={dummyImg.src}
-  rightImage={houstonImg.src}
-  altLeft="IBLなし"
-  altRight="IBLあり"
-/>
-
----
-
-## 💻 C++実装：IBLテクスチャの管理
+## C++実装：IBLテクスチャの管理
 
 ```cpp
 /**
@@ -87,9 +84,7 @@ void IBL::Bind(ID3D11DeviceContext* context)
 }
 ```
 
----
-
-## 💻 HLSL実装：Split-Sum近似によるIBL積分
+## HLSL実装：Split-Sum近似によるIBL積分
 
 Karisが提唱したSplit-Sum近似では、本来1回のモンテカルロ積分で解くべき鏡面反射積分を「事前フィルタ済み環境マップのサンプル」と「BRDF LUTのサンプル」の2項の積に分解します。
 
@@ -152,9 +147,7 @@ float3 ibl_radiance_lambertian(float3 N, float3 V, float roughness, float3 diffu
 }
 ```
 
----
-
-## 🎨 処理の詳細
+## 処理の詳細
 
 ### 1. 拡散と鏡面の分離積分
 
@@ -177,3 +170,5 @@ Specular PMREMはミップレベルごとに異なるRoughnessでプレフィル
 <Aside type="caution">
   IBLは静的にプリベイクされた環境マップに基づくため、時刻に応じて空の色が変化する[Sky](./sky/)や動的なライティング変化とは同期しません。動的IBL更新は今後の拡張課題です。
 </Aside>
+
+<PageEnd />

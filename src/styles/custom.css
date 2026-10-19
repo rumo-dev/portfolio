@@ -279,3 +279,99 @@ html[data-page-transition='zoom']::view-transition-new(root) {
     animation: none !important;
   }
 }
+
+/* ============================================================
+   ドキュメントページ（作品・技術解説）の可読性向上
+   ============================================================ */
+
+/* 本文: 行間と段落間隔を少し広げ、長文でも目が疲れにくくする */
+.sl-markdown-content {
+  line-height: 1.85;
+}
+.sl-markdown-content p:not(:where(.not-content *)) {
+  margin-top: 1.1em;
+}
+
+/* 見出し: セクションの切れ目を一目で分かるようにする */
+.sl-markdown-content h2:not(:where(.not-content *)) {
+  margin-top: 3rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--sl-color-hairline-light);
+  font-size: var(--sl-text-2xl);
+  letter-spacing: 0.01em;
+}
+.sl-markdown-content h2:not(:where(.not-content *))::before {
+  content: "";
+  display: inline-block;
+  width: 0.3em;
+  height: 0.9em;
+  margin-right: 0.55em;
+  vertical-align: -0.1em;
+  border-radius: 2px;
+  background: var(--sl-color-accent);
+}
+.sl-markdown-content h3:not(:where(.not-content *)) {
+  margin-top: 2rem;
+  font-size: var(--sl-text-xl);
+}
+
+/* 比較・解説表: 横に長い表は横スクロールさせ、ページ幅を崩さない */
+.sl-markdown-content table {
+  display: block;
+  overflow-x: auto;
+}
+
+/* コード: 長いコードが続いても読みやすい文字サイズに */
+.expressive-code {
+  margin-top: 1.4rem;
+}
+.expressive-code .frame pre {
+  font-size: 0.86rem;
+  line-height: 1.65;
+}
+
+/* 注釈ボックス（Aside） */
+.starlight-aside {
+  border-radius: 10px;
+}
+
+/* ページ冒頭のタイトル: 少し大きく、行間を詰める */
+.sl-markdown-content :is(h1) {
+  line-height: 1.3;
+}
+#_top {
+  line-height: 1.3;
+}
+
+/* スマホ: 余白とカード内の文字を調整 */
+@media (max-width: 640px) {
+  .sl-markdown-content h2:not(:where(.not-content *)) {
+    margin-top: 2.2rem;
+  }
+  .sl-markdown-content {
+    line-height: 1.8;
+  }
+}
+
+/* 印刷: 面接官が紙で読む場合に、背景色なしで読みやすくする */
+@media print {
+  :root {
+    --sl-color-bg: #fff;
+    --sl-color-text: #111;
+    --sl-color-text-muted: #444;
+  }
+  body {
+    background: #fff !important;
+  }
+  .sidebar-pane,
+  header.header,
+  .right-sidebar,
+  .page-end .pe-links {
+    display: none !important;
+  }
+  .topic-summary,
+  .project-summary,
+  .ps-block {
+    break-inside: avoid;
+  }
+}

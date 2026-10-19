@@ -2,6 +2,7 @@
 title: "技術解説：Area Light（LTC面光源）"
 description: LTC（Linearly Transformed Cosines）による、矩形・円形・球形の面光源をリアルタイムに正確積分するエリアライトの実装。
 sidebar:
+  label: "Area Light（LTC）"
   order: 8
 ---
 
@@ -10,12 +11,23 @@ import ImageGrid from "../../../components/ImageGrid.astro";
 import ImgComparison from "../../../components/ImgComparison.astro";
 import OnImage from "../../../assets/arealight_on.png";
 import OffImage from "../../../assets/arealight_off.png";
+import TopicSummary from "../../../components/TopicSummary.astro";
+import PageEnd from "../../../components/PageEnd.astro";
+
+<TopicSummary />
 
 窓やパネルライトのような「面」を持つ光源を物理的に正確に表現するため、AtmosFioreでは **Area Light（面光源）** を **LTC（Linearly Transformed Cosines）** という手法で実装しています。矩形・円形（ディスク）・球形の3形状に対応し、テクスチャルックアップテーブルを使わないTextureless近似で軽量に動作します。
 
----
+## Area Lightの基本概念
 
-## 📐 Area Lightの基本概念
+Area Light（LTC面光源）の有無をスライダーで比較できます。
+
+<ImgComparison
+  leftImage={OffImage.src}
+  rightImage={OnImage.src}
+  altLeft="Area Lightオフ"
+  altRight="Area Lightオン"
+/>
 
 点光源やスポットライトは「1点から出る光」として近似できますが、窓やパネルライトのような面光源は本来「面全体からの光の積分」として計算する必要があります。LTCは、BRDF（この場合はGGX/Lambertian）を線形変換されたコサイン分布として近似することで、面光源のエッジ積分をリアルタイムに計算可能にする手法です（Eric Heitz, 2016）。
 
@@ -50,22 +62,7 @@ struct AreaLightGpu
 };
 ```
 
----
-
-## 🎚️ 比較デモ
-
-Area Light（LTC面光源）の有無をスライダーで比較できます。
-
-<ImgComparison
-  leftImage={OffImage.src}
-  rightImage={OnImage.src}
-  altLeft="Area Lightオフ"
-  altRight="Area Lightオン"
-/>
-
----
-
-## 💻 C++実装
+## C++実装
 
 ```cpp
 /**
@@ -134,9 +131,7 @@ public:
 
 管理クラス（`AreaLightManager`）もPoint/Spot Lightと同様にStructuredBuffer（`t10`）+ 定数バッファ（`b7`）による構成です。
 
----
-
-## 💻 HLSL実装：LTCコア
+## HLSL実装：LTCコア
 
 ### 多角形エッジの解析的積分
 
@@ -286,9 +281,7 @@ for (int i = 0; i < numAreaLights; ++i)
 }
 ```
 
----
-
-## 🎨 処理の詳細
+## 処理の詳細
 
 ### 1. 球面エッジ積分によるコサイン分布の解析解
 
@@ -304,9 +297,7 @@ for (int i = 0; i < numAreaLights; ++i)
 - **Disk**：8角形で円周を近似
 - **Sphere**：シェーディング点の方を向くビルボードディスクとして12角形で近似し、球の見かけの円盤を表現
 
----
-
-## 🔧 実装のポイント
+## 実装のポイント
 
 ### 1. Diffuse/Specularで異なる変換行列
 
@@ -336,3 +327,5 @@ const float exposure = 5.0;
   Textureless近似は本家LTC
   LUTに比べてラフネス変化に対するフィッティング精度が粗いため、非常に低いラフネス（鏡面に近い面）では反射像の形状にわずかな誤差が生じる場合があります。
 </Aside>
+
+<PageEnd />

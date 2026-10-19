@@ -2,6 +2,7 @@
 title: "技術解説：Adaptation（自動露出）"
 description: シーンの輝度に応じた自動露出調整による目の順応シミュレーション。
 sidebar:
+  label: "Adaptation（自動露出）"
   order: 20
 ---
 
@@ -10,25 +11,14 @@ import ImageGrid from '../../../components/ImageGrid.astro';
 import ImgComparison from '../../../components/ImgComparison.astro';
 import OnImage from "../../../assets/adaptation_on.png";
 import OffImage from "../../../assets/adaptation_off.png";
+import TopicSummary from "../../../components/TopicSummary.astro";
+import PageEnd from "../../../components/PageEnd.astro";
+
+<TopicSummary />
 
 シーンの輝度に応じて露出を自動調整し、目の順応をシミュレートするため、AtmosFioreでは **Adaptation（自動露出）** を採用しています。
 
----
-
-## 📐 Adaptationの基本概念
-
-Adaptationは、シーンの平均輝度を計算し、目の順応をシミュレートして露出を自動調整する技術です。これにより、暗い場所から明るい場所に移動した際の目の順応を再現できます。
-
-### 処理フロー
-
-1. **シーン輝度の計算**: シーンの平均輝度を計算
-2. **露出値の更新**: 前フレームの露出値と目標露出値の間を補間
-3. **露出調整**: 計算された露出値をHDR画像に適用
-4. **Tone Mappingへの入力**: 露出調整済みのHDR画像をTone Mappingに入力
-
----
-
-## 🎚️ 比較デモ
+## Adaptationの基本概念
 
 Adaptation（自動露出）の有無をスライダーで比較できます。
 
@@ -39,9 +29,16 @@ Adaptation（自動露出）の有無をスライダーで比較できます。
   altRight="Adaptationオン"
 />
 
----
+Adaptationは、シーンの平均輝度を計算し、目の順応をシミュレートして露出を自動調整する技術です。これにより、暗い場所から明るい場所に移動した際の目の順応を再現できます。
 
-## 💻 C++実装
+### 処理フロー
+
+1. **シーン輝度の計算**: シーンの平均輝度を計算
+2. **露出値の更新**: 前フレームの露出値と目標露出値の間を補間
+3. **露出調整**: 計算された露出値をHDR画像に適用
+4. **Tone Mappingへの入力**: 露出調整済みのHDR画像をTone Mappingに入力
+
+## C++実装
 
 以下は、AtmosFioreのAdaptationクラスの実装です。
 
@@ -96,9 +93,7 @@ private:
 };
 ```
 
----
-
-## 💻 HLSL実装
+## HLSL実装
 
 以下は、AtmosFioreのAdaptation処理で使用されるHLSLシェーダーコードです。
 
@@ -183,9 +178,7 @@ float4 main(VS_OUT pin) : SV_TARGET
 }
 ```
 
----
-
-## 🎨 処理の詳細
+## 処理の詳細
 
 ### 1. 輝度計算
 
@@ -217,9 +210,7 @@ float new_exposure = lerp(current_exposure, target_exposure, 1.0f - exp(-speed *
 float3 adapted_color = hdr_color.rgb * exposure;
 ```
 
----
-
-## 🔧 実装のポイント
+## 実装のポイント
 
 ### 1. 1x1テクスチャによる露出値の保持
 
@@ -233,9 +224,7 @@ float3 adapted_color = hdr_color.rgb * exposure;
 
 露出値を最小値（0.05）と最大値（10.0）でクランプすることで、極端な露出を防ぎます。
 
----
-
-## 📝 注意点
+## 注意点
 
 <Aside type="note">
   Adaptationはポストプロセス前提設計であり、Fullscreen Quad を使用してフルスクリーン描画を行います。
@@ -248,3 +237,5 @@ float3 adapted_color = hdr_color.rgb * exposure;
 <Aside type="caution">
   輝度計算は計算コストが高いため、Mipmapを使用して効率的に計算する必要があります。最上位のミップマップレベルを使用することで、1ピクセルのサンプリングでシーン全体の平均輝度を取得できます。
 </Aside>
+
+<PageEnd />

@@ -8,6 +8,9 @@ sidebar:
 import { LinkCard } from "@astrojs/starlight/components";
 import ModalVideo from "../../../components/ModalVideo.astro";
 import ProjectSummary from "../../../components/ProjectSummary.astro";
+import ProblemSolution from "../../../components/ProblemSolution.astro";
+import TopicIndex from "../../../components/TopicIndex.astro";
+import PageEnd from "../../../components/PageEnd.astro";
 
 <ProjectSummary
   kind="個人制作 / リアルタイム・グラフィックスデモ"
@@ -15,6 +18,12 @@ import ProjectSummary from "../../../components/ProjectSummary.astro";
   period="2025年8月〜（継続開発中）"
   team="1人（個人制作）"
   stack={["C++", "DirectX 11", "HLSL", "自作エンジン"]}
+  metrics={[
+    { value: "21本", label: "公開中の技術解説（コード付き）" },
+    { value: "12種", label: "統括管理しているポストエフェクト" },
+    { value: "34種", label: "実行時に切り替えられるトーンマッピング" },
+    { value: "約64MB", label: "G-Buffer の消費量（1080p・1フレーム）を把握し最適化" },
+  ]}
   highlights={[
     "既存ゲームエンジンを使わず、DirectX 11 の描画基盤から自作",
     "ディファードライティング・PBR・IBL・シャドウ・ポストプロセスを実装",
@@ -32,40 +41,51 @@ import ProjectSummary from "../../../components/ProjectSummary.astro";
 
 ## 作品概要
 
-DirectX 11ベースの自作グラフィックスエンジンおよびカスタムシェーダーデモです。
-既存ゲームエンジンを介さず、DirectX 11ローレベル描画からフォトリアルな空気感を描き切ることを目標にしています。
+DirectX 11 ベースの自作グラフィックスエンジンおよびカスタムシェーダーデモです。
+既存ゲームエンジンを介さず、DirectX 11 のローレベル描画からフォトリアルな空気感を描き切ることを目標にしています。
 
 主な実装機能は、物理ベースレンダリング（PBR）、ディファードライティング、各種光源（点・スポット・平行・面光源）、シャドウマッピング、IBL、大気散乱スカイ、フォグ、およびポストプロセス（Bloom / トーンマッピング / 自動露出 / 被写界深度 / 色収差 / レンズ歪曲 / ビネット）です。
 
----
+## まず見てほしい技術解説
 
-## 💡 技術的な拘り・実装のポイント
+実装の深さが分かりやすい4本です。
 
-### 1. 映画の1コマのような空気感を演出する「ポストプロセス」
+<TopicIndex featuredOnly />
 
-HDRレンダリングされた高輝度カラー情報を適切に画面に表示するトーンマッピング（ACES Filmic Tone Mapping）と、自動露出（Adaptation）を実装。さらにBloomエフェクトを用いて高輝度部分の発光表現を追加し、建築雑誌のグラビアやシネマライクな絵作りを実現しました。
+## 技術的なこだわり
 
-- 👉 詳細な実装解説：[トーンマッピングの実装詳細](../../reference/tone-mapping/)
-- 👉 詳細な実装解説：[Bloomの実装詳細](../../reference/bloom/)
-- 👉 詳細な実装解説：[自動露出（Adaptation）の実装詳細](../../reference/adaptation/)
+### 映画の1コマのような空気感を演出するポストプロセス
 
----
+HDR レンダリングされた高輝度カラーを適切に画面へ表示するトーンマッピング（ACES Filmic Tone Mapping）と、自動露出（Adaptation）を実装。さらに Bloom で高輝度部分の発光表現を加え、建築雑誌のグラビアやシネマライクな絵作りを実現しました。
 
-## 🔧 直面した課題と解決策
+- 詳細: [トーンマッピングの実装詳細](../../reference/tone-mapping/)
+- 詳細: [Bloom の実装詳細](../../reference/bloom/)
+- 詳細: [自動露出（Adaptation）の実装詳細](../../reference/adaptation/)
 
-- **課題: ディファードライティングにおけるG-Bufferのメモリ消費と帯域幅**
-  4つのレンダーターゲット（G-Buffer）を使用するディファードライティングにおいて、1920x1080解像度で1フレームあたり約64MBのメモリを消費し、GPUの帯域幅に負荷がかかる課題がありました。また、G-Bufferからの情報読み取りがピクセルシェーダーの負荷を増加させていました。
+## 直面した課題と解決策
 
-- **解決策:**
-  1. **G-Bufferレイアウトの最適化**を実施。法線（R16G16B16A16_FLOAT）、アルベド+金属度（R8G8B8A8_UNORM）、位置+AO（R16G16B16A16_FLOAT）、エミッシブ（R16G16B16A16_FLOAT）の4つのRTを使用し、必要な情報を最小限のフォーマットで格納。
-  2. **位置情報の深度からの再構築**を検討し、メモリ消費をさらに削減する手法を調査。現在は位置情報を直接格納しているが、深度バッファから再構築することでG-Buffer2を削減可能。
+### ディファードライティングの G-Buffer が消費するメモリと帯域
 
----
+<ProblemSolution
+  problem="4つのレンダーターゲット（G-Buffer）を使うディファードライティングで、1920×1080 のとき1フレームあたり約64MBを消費し、GPU の帯域幅に負荷がかかっていました。G-Buffer の読み取りがピクセルシェーダーの負荷も増やしていました。"
+  steps={[
+    "<strong>G-Buffer のレイアウトを最適化。</strong>法線（R16G16B16A16_FLOAT）、アルベド+金属度（R8G8B8A8_UNORM）、位置+AO（R16G16B16A16_FLOAT）、エミッシブ（R16G16B16A16_FLOAT）の4枚に、必要な情報を最小限のフォーマットで格納。",
+    "<strong>位置情報の深度バッファからの再構築を検討中。</strong>現在は位置を直接格納していますが、再構築すれば G-Buffer を1枚削減できる見込みです。",
+  ]}
+/>
 
-## 🔗 ソースコード
+詳しくは [G-Buffer の技術解説](../../reference/gbuffer/) をご覧ください。
+
+## 技術解説の全体マップ
+
+<TopicIndex />
+
+## ソースコード
 
 <LinkCard
   title="GitHub - AtmosFiore"
-  description="DirectX11/C++エンジンのソースコードおよびHLSLシェーダーコードを公開しています。"
+  description="DirectX 11 / C++ エンジンのソースコードおよび HLSL シェーダーコードを公開しています。"
   href="https://github.com/rumo-dev/AtmosFiore"
 />
+
+<PageEnd />

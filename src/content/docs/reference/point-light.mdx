@@ -2,6 +2,7 @@
 title: "技術解説：Point Light（点光源）"
 description: StructuredBufferとフラスタムカリングによる、電球やランプのような点光源のリアルタイム実装。
 sidebar:
+  label: "Point Light"
   order: 5
 ---
 
@@ -9,12 +10,23 @@ import { Aside } from "@astrojs/starlight/components";
 import ImgComparison from "../../../components/ImgComparison.astro";
 import dummyImg from "../../../assets/dummy00.png";
 import houstonImg from "../../../assets/dummy01.png";
+import TopicSummary from "../../../components/TopicSummary.astro";
+import PageEnd from "../../../components/PageEnd.astro";
+
+<TopicSummary />
 
 ランプや電球のような、あらゆる方向に均等に光を放つ光源を表現するため、AtmosFioreでは **Point Light（点光源）** を実装しています。CPU側でフラスタムカリングを行った上でStructuredBufferにパッキングし、Deferred Lightingパスで動的な光源数のループ処理を行う設計です。
 
----
+## Point Lightの基本概念
 
-## 📐 Point Lightの基本概念
+点灯前後をスライダーで比較できます。
+
+<ImgComparison
+  leftImage={dummyImg.src}
+  rightImage={houstonImg.src}
+  altLeft="消灯"
+  altRight="点灯"
+/>
 
 点光源は「位置」「影響半径」「強度」「色」という最小限のパラメータのみを持ち、半径内では距離の2乗に近い滑らかな減衰で光が弱まります。
 
@@ -33,22 +45,7 @@ struct PointLightGpu
 
 32バイトのコンパクトな構造体としてGPUに転送されるため、StructuredBufferに数百〜千個規模の光源を効率よく保持できます。
 
----
-
-## 🎚️ 比較デモ
-
-点灯前後をスライダーで比較できます。
-
-<ImgComparison
-  leftImage={dummyImg.src}
-  rightImage={houstonImg.src}
-  altLeft="消灯"
-  altRight="点灯"
-/>
-
----
-
-## 💻 C++実装
+## C++実装
 
 ```cpp
 class PointLight : public LightBase
@@ -214,9 +211,7 @@ void PointLightManager::create_structured_buffer(ID3D11Device* device)
 }
 ```
 
----
-
-## 💻 HLSL実装
+## HLSL実装
 
 ```hlsl
 // point_light.hlsli
@@ -268,9 +263,7 @@ for (int i = 0; i < numPointLights; ++i)
 }
 ```
 
----
-
-## 🎨 処理の詳細
+## 処理の詳細
 
 ### 1. 半径ベースの減衰モデル
 
@@ -284,9 +277,7 @@ for (int i = 0; i < numPointLights; ++i)
 
 ポイントライトは本来キューブマップ6面のシャドウが必要ですが、AtmosFioreは`point_shadow_front_map` / `point_shadow_back_map`という前後2枚の深度マップで簡略化し、`SamplePointLightShadow`関数内でライト方向に応じて適切な面をサンプリングしています。
 
----
-
-## 🔧 実装のポイント
+## 実装のポイント
 
 ### 1. Dynamic StructuredBufferによる毎フレーム更新
 
@@ -311,3 +302,5 @@ StructuredBufferのサイズを固定（1024要素）にしているため、そ
 <Aside type="caution">
   ライト数が多い場合、ピクセルシェーダー内の光源ループがボトルネックになりやすいため、フラスタムカリングに加えてタイルド/クラスタードライティングの導入余地があります（現状は未実装）。
 </Aside>
+
+<PageEnd />

@@ -2,6 +2,7 @@
 title: "技術解説：Fog System（フォグシステム）"
 description: 距離・指数・高さ・ボリュームの4方式を多段合成する、AtmosFioreのフォグシステム。
 sidebar:
+  label: "Fog System"
   order: 13
 ---
 
@@ -9,12 +10,23 @@ import { Aside } from "@astrojs/starlight/components";
 import ImgComparison from "../../../components/ImgComparison.astro";
 import dummyImg from "../../../assets/dummy00.png";
 import houstonImg from "../../../assets/dummy01.png";
+import TopicSummary from "../../../components/TopicSummary.astro";
+import PageEnd from "../../../components/PageEnd.astro";
+
+<TopicSummary />
 
 屋外シーンの奥行き表現と雰囲気作りのため、AtmosFioreでは4種類のフォグを **`FogBase`** という共通インターフェースの下に実装し、パイプライン上で多段合成しています。単純な距離減衰から、光散乱を考慮したレイマーチングベースのボリュームフォグまで、用途に応じて使い分けられる構成です。
 
----
+## Fog Systemの基本概念
 
-## 📐 Fog Systemの基本概念
+フォグの有無をスライダーで比較できます。
+
+<ImgComparison
+  leftImage={dummyImg.src}
+  rightImage={houstonImg.src}
+  altLeft="フォグなし"
+  altRight="フォグあり"
+/>
 
 ```cpp
 /**
@@ -47,22 +59,7 @@ Sky → VolumetricFog → HeightFog → DistanceFog → ExponentialFog → DoF �
 
 物理的なボリューム散乱（VolumetricFog）を最初に適用し、そのあとに比較的軽量な解析的フォグ（Height / Distance / Exponential）を重ねる構成です。
 
----
-
-## 🎚️ 比較デモ
-
-フォグの有無をスライダーで比較できます。
-
-<ImgComparison
-  leftImage={dummyImg.src}
-  rightImage={houstonImg.src}
-  altLeft="フォグなし"
-  altRight="フォグあり"
-/>
-
----
-
-## 1️⃣ Distance Fog（距離フォグ）
+## 1. Distance Fog（距離フォグ）
 
 カメラからの距離に対してリニアにフォグを掛ける、もっともシンプルな実装です。
 
@@ -110,9 +107,7 @@ float4 main(VS_OUT pin) : SV_TARGET
 }
 ```
 
----
-
-## 2️⃣ Exponential Fog（指数フォグ）
+## 2. Exponential Fog（指数フォグ）
 
 遠景が自然にフェードアウトする屋外シーン向けに、指数関数的な密度カーブを採用しています。
 
@@ -142,9 +137,7 @@ public:
 
 `Exponential`（`1 - exp(-density * dist)`）は緩やかな減衰、`Exponential2`（`1 - exp(-(density * dist)^2)`）は近距離では薄く遠距離で急激に濃くなる、より現実の大気に近いカーブになります。
 
----
-
-## 3️⃣ Height Fog（高さフォグ）
+## 3. Height Fog（高さフォグ）
 
 ワールド空間のY座標に基づいて密度を計算し、地面付近にのみ霞がかかる表現に適しています。
 
@@ -178,9 +171,7 @@ public:
 
 `noise_scale` / `noise_strength` / `wind_velocity` の追加パラメータにより、静的な高さフォグに時間経過とともに揺らぐノイズと風による移流を加え、単調にならない自然な霧の表現を実現しています。
 
----
-
-## 4️⃣ Volumetric Fog（ボリュームフォグ）
+## 4. Volumetric Fog（ボリュームフォグ）
 
 レイマーチング＋FBMノイズ＋各光源の散乱を計算する、もっとも物理的に正確なフォグです。従来Deferred Lighting内に実装されていたロジックをポストプロセスパスへ分離したものです。
 
@@ -245,9 +236,7 @@ ctx->CSSetUnorderedAccessViews(0, 1, accum_volume_uav_.GetAddressOf(), nullptr);
 
 160×90×128のFroxelグリッド（3Dテクスチャ）に対し、まずポイントライト・スポットライト・ディレクショナルライトの散乱をシャドウマップ込みで注入し（パス1）、続いてカメラから奥へ向かって透過率を累積する（パス2）ことで、光の筋（God Ray的な効果）を含む物理的なボリューム散乱を実現しています。
 
----
-
-## 🎨 処理の詳細
+## 処理の詳細
 
 ### 1. 4方式の使い分け
 
@@ -277,9 +266,7 @@ if (!is_enabled)
 
 VolumetricFogをはじめ各フォグは、無効時に前段の結果をそのまま次段へパススルーする実装になっており、4方式のうち任意の組み合わせをオン・オフしてもパイプラインが破綻しません。
 
----
-
-## 🔧 実装のポイント
+## 実装のポイント
 
 ### 1. FogBaseによる差し替え可能な設計
 
@@ -304,3 +291,5 @@ HeightFogとVolumetricFogはいずれも `time` パラメータを持ち、`Post
   Shaderを使用するため、`D3D_FEATURE_LEVEL_11_0`
   以上が必須です。また、他の解析的フォグと比べてGPU負荷が高いため、パフォーマンス要件に応じて無効化できるようにしておくことを推奨します。
 </Aside>
+
+<PageEnd />

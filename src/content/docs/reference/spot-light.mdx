@@ -2,6 +2,7 @@
 title: "技術解説：Spot Light（スポットライト）"
 description: 内側・外側角度によるコーン状の減衰を持つ、懐中電灯やスポットライトのような方向性光源の実装。
 sidebar:
+  label: "Spot Light"
   order: 6
 ---
 
@@ -9,12 +10,23 @@ import { Aside } from "@astrojs/starlight/components";
 import ImgComparison from "../../../components/ImgComparison.astro";
 import dummyImg from "../../../assets/dummy00.png";
 import houstonImg from "../../../assets/dummy01.png";
+import TopicSummary from "../../../components/TopicSummary.astro";
+import PageEnd from "../../../components/PageEnd.astro";
+
+<TopicSummary />
 
 懐中電灯やスポットライトのような、特定方向に円錐状の光を放つ光源を表現するため、AtmosFioreでは **Spot Light（スポットライト）** を実装しています。Point Lightの距離減衰に加え、内側角度・外側角度による滑らかなコーン状の減衰を組み合わせています。
 
----
+## Spot Lightの基本概念
 
-## 📐 Spot Lightの基本概念
+点灯前後をスライダーで比較できます。
+
+<ImgComparison
+  leftImage={dummyImg.src}
+  rightImage={houstonImg.src}
+  altLeft="消灯"
+  altRight="点灯"
+/>
 
 スポットライトはPoint Lightに「方向（direction）」「内側角度（innerAngle）」「外側角度（outerAngle）」を加えたモデルです。ライト方向と、ライトからピクセルへの方向のなす角度が内側角度未満なら減衰なし、外側角度を超えたら完全に光が届かないものとして扱い、その間を`smoothstep`で滑らかに補間します。
 
@@ -37,22 +49,7 @@ struct SpotLightGpu
 };
 ```
 
----
-
-## 🎚️ 比較デモ
-
-点灯前後をスライダーで比較できます。
-
-<ImgComparison
-  leftImage={dummyImg.src}
-  rightImage={houstonImg.src}
-  altLeft="消灯"
-  altRight="点灯"
-/>
-
----
-
-## 💻 C++実装
+## C++実装
 
 ```cpp
 /**
@@ -118,9 +115,7 @@ public:
 
 管理クラス（`SpotLightManager`）はPoint Lightと同一のパターン（StructuredBuffer + フラスタムカリング + Dynamic Map/Unmap）で実装されており、GPU転送はレジスタ`t9`（StructuredBuffer）・`b6`（ライト数定数バッファ）にバインドされます。
 
----
-
-## 💻 HLSL実装
+## HLSL実装
 
 ```hlsl
 // spot_light.hlsli
@@ -198,9 +193,7 @@ for (int i = 0; i < numSpotLights; ++i)
 }
 ```
 
----
-
-## 🎨 処理の詳細
+## 処理の詳細
 
 ### 1. cos角度によるコーン判定
 
@@ -219,9 +212,7 @@ float spotAttenuation = (cosAngle < cosOuter) ? 0.0f
 
 角度減衰（`spotAttenuation`）と距離減衰（`distanceAttenuation`）は独立して計算されたのち乗算されるため、コーンの中心軸に近くても半径外なら光が届かず、逆に半径内でもコーンの外なら光が届かないという、直感的な振る舞いになります。
 
----
-
-## 🔧 実装のポイント
+## 実装のポイント
 
 ### 1. Point Lightとの実装パターンの共通化
 
@@ -242,3 +233,5 @@ float spotAttenuation = (cosAngle < cosOuter) ? 0.0f
 <Aside type="caution">
   `innerAngle`が`outerAngle`より大きい値に設定されると、`smoothstep`の引数が逆転してアーティファクトが発生するため、GUIやデータ側で`innerAngle <= outerAngle`を保証する必要があります。
 </Aside>
+
+<PageEnd />

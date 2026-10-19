@@ -2,18 +2,23 @@
 title: "技術解説：Physical Material（物理ベースマテリアル）"
 description: glTF pbrMetallicRoughnessワークフローに準拠した、Albedo・Metallic・Roughnessによる物理ベースマテリアル表現。
 sidebar:
+  label: "Physical Material (PBR)"
   order: 2
 ---
 
 import { Aside } from "@astrojs/starlight/components";
 import ImageGrid from "../../../components/ImageGrid.astro";
 import dummyImg from "../../../assets/dummy00.png";
+import TopicSummary from "../../../components/TopicSummary.astro";
+import PageEnd from "../../../components/PageEnd.astro";
+
+<TopicSummary />
 
 大理石の鏡面反射、木材の微細な吸光、遮光カーテンの半透過といった室内特有の質感を描き分けるため、AtmosFioreでは **glTF 2.0 の pbrMetallicRoughness ワークフロー** に準拠した物理ベースマテリアル（PBR）を採用しています。すべてのマテリアルは Base Color・Metallic・Roughness・Normal・Occlusion・Emissive の6要素に統一的に分解され、G-Bufferを介して後段のDeferred Lightingへ受け渡されます。
 
----
+## PBRの基本概念
 
-## 📐 PBRの基本概念
+<ImageGrid images={[dummyImg.src, dummyImg.src, dummyImg.src]} />
 
 物理ベースレンダリングは、光の反射をエネルギー保存則に基づいて計算する手法です。AtmosFioreでは、金属か非金属かを1つのMetallicパラメータで滑らかに補間する **Metallic-Roughnessワークフロー** を採用し、アーティストが直感的にパラメータ調整できるようにしています。
 
@@ -57,15 +62,7 @@ StructuredBuffer<material_constants> materials : register(t0);
 | Occlusion  | 環境光の遮蔽度                           | 隙間・溝の陰影                          |
 | Emissive   | 自己発光色                               | ランプの発光部分                        |
 
----
-
-## 🖼️ デモ
-
-<ImageGrid images={[dummyImg.src, dummyImg.src, dummyImg.src]} />
-
----
-
-## 💻 HLSL実装：BRDFの物理パラメータへの変換
+## HLSL実装：BRDFの物理パラメータへの変換
 
 Metallic-Roughnessワークフローの核心は、Base ColorとMetallicから鏡面反射率（F0）と拡散反射色を導出する部分です。
 
@@ -103,9 +100,7 @@ float3 brdf_lambertian(float3 f0, float3 f90, float3 diffuse_color, float VoH)
 }
 ```
 
----
-
-## 🎨 処理の詳細
+## 処理の詳細
 
 ### 1. Metallic-Roughnessによる単一ワークフロー
 
@@ -128,3 +123,5 @@ Specular-Glossinessなど他のワークフローと異なり、マテリアル�
 <Aside type="caution">
   非金属のF0を固定値0.04で近似しているため、水晶や宝石のような高屈折率の誘電体は正確に再現できません。特殊素材が必要な場合はマテリアルごとにF0をオーバーライドする拡張が必要です。
 </Aside>
+
+<PageEnd />

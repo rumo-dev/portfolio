@@ -2,32 +2,29 @@
 title: "技術解説：Post Effect Manager（ポストエフェクト管理）"
 description: 12種類のポストエフェクトを一本のパイプラインとして統括する、AtmosFioreのポストプロセス管理システム。
 sidebar:
+  label: "Post Effect Manager"
   order: 11
 ---
 
 import { Aside, LinkCard, CardGrid, Card } from "@astrojs/starlight/components";
 import ImageGrid from "../../../components/ImageGrid.astro";
 import dummyImg from "../../../assets/dummy00.png";
+import TopicSummary from "../../../components/TopicSummary.astro";
+import PageEnd from "../../../components/PageEnd.astro";
+
+<TopicSummary />
 
 AtmosFioreでは、Deferred Lightingで生成されたHDRシーンカラーに対し、12種類のポストエフェクトを決められた順序で連鎖適用する **Post_Process_Manager** がレンダリングパイプラインの最終工程を担っています。各エフェクトは「前段の出力SRVを受け取り、自身の出力SRVを返す」というバケツリレー方式で疎結合に接続されており、エフェクトの追加・削除・順序変更が容易な設計になっています。
 
----
+## 設計思想
 
-## 📐 設計思想
+<ImageGrid images={[dummyImg.src]} />
 
 - **単一責任のフルスクリーンパス**：各エフェクトクラス（`bloom` / `Fog` / `Adaptation` など）は、コンストラクタで自身専用のフレームバッファとピクセルシェーダーを保持し、`make()` 一発でHDR入力→HDR（またはSDR）出力を完結させます。
 - **静的シングルトン的な管理**：`Post_Process_Manager` 自体はすべてのメンバ関数が `static` で、エンジン全体から `Post_Process_Manager::draw()` のように直接呼び出せます。
 - **状態退避・復元の徹底**：各エフェクトの `make()` 内部では、深度ステンシル・ラスタライザ・ブレンドステート・シェーダーリソースビューを呼び出し前に退避し、処理後に必ず復元することで、他の描画パス（ImGuiやシーン描画）に副作用を与えません。
 
----
-
-## 🖼️ パイプライン全体のデモ
-
-<ImageGrid images={[dummyImg.src]} />
-
----
-
-## 🔗 パイプライン構成
+## パイプライン構成
 
 ```mermaid
 graph TD
@@ -52,9 +49,7 @@ graph TD
 
 フォグ→被写界深度の順にしているのは、ボケの縁にフォグが自然に馴染むようにするためです。逆に露出・色収差・歪曲・周辺減光・Bloomはすべて「レンズ／カメラ由来の効果」としてDoFの後段にまとめ、最後にAdaptation（自動露出）とTone Mappingで画面全体の見え方を確定させています。
 
----
-
-## 💻 C++実装：管理クラスの骨格
+## C++実装：管理クラスの骨格
 
 ```cpp
 class Post_Process_Manager {
@@ -108,9 +103,7 @@ private:
 };
 ```
 
----
-
-## 💻 C++実装：パイプライン実行 (`draw`)
+## C++実装：パイプライン実行 (`draw`)
 
 ```cpp
 void Post_Process_Manager::draw()
@@ -167,9 +160,7 @@ void Post_Process_Manager::render()
 }
 ```
 
----
-
-## 🎨 処理の詳細
+## 処理の詳細
 
 ### 1. バケツリレー方式の接続
 
@@ -215,9 +206,7 @@ void Post_Process_Manager::update(float elapsedtime)
 
 Sky・フォグ系のノイズアニメーションやAdaptationの順応速度など、フレーム時間に依存するパラメータをここで一括更新し、各エフェクトの `make()` はステートレスに保っています。
 
----
-
-## 🔧 実装のポイント
+## 実装のポイント
 
 ### 1. 疎結合な依存関係
 
@@ -239,9 +228,7 @@ Sky・フォグ系のノイズアニメーションやAdaptationの順応速度�
   パイプラインの順序を変更する際は、後段のエフェクトが前提とする入力の性質（HDRかSDRか、線形かガンマ済みかなど）に注意する必要があります。特にTone Mappingは必ず最終段に配置してください。
 </Aside>
 
----
-
-## 🔧 関連する個別エフェクト
+## 関連する個別エフェクト
 
 <CardGrid>
 <Card title="Sky" icon="moon"><LinkCard title="Skyの実装詳細" href="./sky/" /></Card>
@@ -255,3 +242,5 @@ Sky・フォグ系のノイズアニメーションやAdaptationの順応速度�
 <Card title="Adaptation" icon="eye"><LinkCard title="自動露出の実装詳細" href="./adaptation/" /></Card>
 <Card title="Tone Mapping" icon="adjust"><LinkCard title="Tone Mappingの実装詳細" href="./tone-mapping/" /></Card>
 </CardGrid>
+
+<PageEnd />

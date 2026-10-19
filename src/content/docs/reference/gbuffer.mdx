@@ -2,6 +2,7 @@
 title: "技術解説：G-Buffer（ジオメトリバッファ）"
 description: ディファードレンダリングで使用する幾何情報を格納する4枚構成のG-Bufferと、その書き込み・読み出しパイプライン。
 sidebar:
+  label: "G-Buffer"
   order: 3
 ---
 
@@ -9,12 +10,16 @@ import { Aside } from "@astrojs/starlight/components";
 import ImageGrid from "../../../components/ImageGrid.astro";
 import dummyImg from "../../../assets/dummy00.png";
 import DesignDecision from "../../../components/DesignDecision.astro";
+import TopicSummary from "../../../components/TopicSummary.astro";
+import PageEnd from "../../../components/PageEnd.astro";
+
+<TopicSummary />
 
 多数の光源を効率よく処理するため、AtmosFioreは **ディファードレンダリング** を採用しています。その中核となるのが、ジオメトリパスで書き出した法線・アルベド・位置・エミッシブなどの幾何情報を保持する **G-Buffer** です。ライティング計算をジオメトリ描画から完全に分離することで、光源数が増えてもドローコールを増やさずに済む設計になっています。
 
----
+## G-Bufferの基本概念
 
-## 📐 G-Bufferの基本概念
+<ImageGrid images={[dummyImg.src]} />
 
 G-Bufferは、シーン中の各ピクセルについて「どんな材質か・どんな法線か・どこにあるか」といったシェーディングに必要な情報を、複数のレンダーターゲット（MRT: Multiple Render Targets）にまとめて書き出したものです。ライティングパスではこのG-Bufferをテクスチャとして読み込むだけで、ジオメトリの再描画なしに任意の光源数のライティング計算を行えます。
 
@@ -43,15 +48,7 @@ Depth Buffer : D32_FLOAT
 
 1920×1080解像度でおよそ64MB/フレームのメモリを消費します。位置情報（GBuffer2.xyz）は深度からの復元も可能ですが、AtmosFioreでは実装の単純さを優先し直接格納しています。
 
----
-
-## 🖼️ デモ
-
-<ImageGrid images={[dummyImg.src]} />
-
----
-
-## 🧭 設計判断：なぜこの手法か
+## 設計判断：なぜこの手法か
 
 <DesignDecision
   chosen="4つのレンダーターゲットに、必要な情報を最小限のフォーマットで格納する"
@@ -61,9 +58,7 @@ Depth Buffer : D32_FLOAT
   ]}
 />
 
----
-
-## 💻 C++実装
+## C++実装
 
 ```cpp
 /// Gバッファのレンダーターゲット数（位置・法線・アルベド・マテリアルなど）
@@ -188,9 +183,7 @@ void GeometryBuffer::Deactivate(ID3D11DeviceContext* immediate_context)
 }
 ```
 
----
-
-## 💻 HLSL実装：G-Bufferへの書き込み（ジオメトリパス）
+## HLSL実装：G-Bufferへの書き込み（ジオメトリパス）
 
 ```hlsl
 // gltf_deferred_geometry_ps.hlsl
@@ -243,9 +236,7 @@ float  ao        = gbuffer2.w;
 float3 emissive  = gbuffer3.rgb;
 ```
 
----
-
-## 🎨 処理の詳細
+## 処理の詳細
 
 ### 1. Multiple Render Targets（MRT）による一括書き込み
 
@@ -259,9 +250,7 @@ float3 emissive  = gbuffer3.rgb;
 
 深度バッファを`R32_TYPELESS`で確保することで、同一リソースに対して深度書き込み用のDSV（`D32_FLOAT`）と、シェーダー読み出し用のSRV（`R32_FLOAT`）の両方のビューを作成できるようにしています。
 
----
-
-## 🔧 実装のポイント
+## 実装のポイント
 
 ### 1. SRV/RTV排他制約への対応
 
@@ -279,3 +268,5 @@ DirectX 11では同一リソースをSRVとRTVとして同時にバインドす�
 <Aside type="caution">
   4枚のRTを持つため、解像度やアンチエイリアシング（現状MSAA未対応）を変更する際はメモリコストの増大に注意してください。
 </Aside>
+
+<PageEnd />
