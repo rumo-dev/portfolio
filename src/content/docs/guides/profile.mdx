@@ -1,0 +1,49 @@
+---
+lastUpdated: 2026-10-28
+title: "自己紹介 — 丸毛 温仁"
+description: "2028年3月卒業見込み。DirectX 11 / C++で描画基盤とシェーダーを制作しているグラフィックスプログラマー志望。"
+sidebar:
+  label: "自己紹介・連絡先"
+  order: 1
+---
+
+import { LinkCard, CardGrid } from "@astrojs/starlight/components";
+import PageEnd from "../../../components/PageEnd.astro";
+
+**丸毛 温仁（マルモ ハルト）**
+
+ECCコンピュータ専門学校 ゲーム開発研究学科 / 2028年3月卒業見込み。グラフィックスプログラマーを志望しています。
+
+## 取り組んでいること
+
+DirectX 11 / C++を用い、室内の光と空気感を表現する個人制作「AtmosFiore」を継続開発しています。APIの呼び出しだけでなく、バッファの構成、描画順序、シェーダーの入力、実装上の制約まで説明できることを大切にしています。
+
+## 制作物から見ていただける技術
+
+| 分野 | 取り組み | 実装記事 |
+| --- | --- | --- |
+| C++ / DirectX 11 | MRT、深度、SRV / RTV、リソースの再生成 | [G-Buffer](../../reference/gbuffer/) |
+| HLSL / ライティング | PBR、LTC LUTによる面光源、画面空間表現 | [Area Light](../../reference/area-light/) |
+| GPU処理 | Compute ShaderのScatterと累積和 | [Depth of Field](../../reference/dof/) |
+| 開発支援 | 中間結果の可視化、ImGui、Tracy計測区間 | [開発支援](../../reference/debug-tools/) |
+| CPU処理 | ワーカープールとアニメーション更新 | [Job System](../../reference/job-system/) |
+
+## 個人制作とチーム制作
+
+<CardGrid>
+<LinkCard title="AtmosFiore / 個人制作" description="描画エンジンとシェーダーの設計・実装。デモと技術の全体像。" href="../atmosfiore/" />
+<LinkCard title="Coin Baller / チーム制作" description="4人・38日間。シェーダーとポストエフェクトを担当。" href="../coin-baller/" />
+<LinkCard title="FIGAVOID / チーム制作" description="3人・3週間。Player・Enemy、タイトル・リザルトを担当。" href="../figavoid/" />
+</CardGrid>
+
+## これから深めたいこと
+
+同一条件の比較画像とカメラ移動動画を揃え、機材・解像度・有効機能とともにGPU時間を記録することです。時間方向の安定性と画面空間手法の限界を理解し、計測を基に改善できる開発者を目指しています。
+
+## 連絡先
+
+採用・面談についてのご連絡は、[marumo.h.job@gmail.com](mailto:marumo.h.job@gmail.com)へお願いいたします。
+
+[GitHub — rumo-dev](https://github.com/rumo-dev) / [X — @rumo_atfi](https://x.com/rumo_atfi)
+
+<PageEnd />

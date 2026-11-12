@@ -1,56 +1,83 @@
 ---
-// 技術解説のカテゴリ別一覧。src/data/topics.ts から自動生成します。
-import { topics, categories, type CategoryKey } from "../data/topics";
+// 技術解説をカテゴリ別に並べ、一覧と記事ページで同じ記事データを使います。
+import { topics, categories, categoryOrder, type CategoryKey } from "../data/topics";
+import TopicCategoryNav from "./TopicCategoryNav.astro";
 
 interface Props {
-  /** true なら「まずここから」だけを表示 */
   featuredOnly?: boolean;
+  categoryNavOnly?: boolean;
+  hideCategoryNav?: boolean;
 }
-const { featuredOnly = false } = Astro.props;
-
+const { featuredOnly = false, categoryNavOnly = false, hideCategoryNav = false } = Astro.props;
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 const href = (slug: string) => `${base}/reference/${slug}/`;
-const keys = Object.keys(categories) as CategoryKey[];
-const featured = topics.filter((t) => t.featured);
+const featuredOrder = ["gbuffer", "area-light", "tone-mapping"];
+const topicOrder: Record<CategoryKey, string[]> = {
+  foundation: ["pbr", "gbuffer", "deferred-lighting", "model-pipeline", "dlss"],
+  lighting: ["directional-light", "point-light", "spot-light", "area-light", "shadow-mapping", "ibl"],
+  globalIllumination: ["voxel-gi", "ddgi"],
+  screenSpace: ["ssao", "ssr", "ssgi", "taa"],
+  atmosphere: ["sky", "fog"],
+  post: ["exposure", "adaptation", "tone-mapping", "bloom", "dof", "chromatic-aberration", "lens-distortion", "vignetting", "post-effect-manager"],
+  system: ["camera-system", "job-system", "debug-tools", "audio-engine"],
+};
+const featured = topics
+  .filter((topic) => topic.featured && featuredOrder.includes(topic.slug))
+  .sort((a, b) => featuredOrder.indexOf(a.slug) - featuredOrder.indexOf(b.slug));
+const orderedTopics = (key: CategoryKey) => {
+  const order = topicOrder[key];
+  return topics
+    .filter((topic) => topic.category === key)
+    .sort((a, b) => order.indexOf(a.slug) - order.indexOf(b.slug));
+};
 ---
 
 {
-  featuredOnly ? (
+  categoryNavOnly ? (
+    <TopicCategoryNav />
+  ) : featuredOnly ? (
     <ul class="ti-featured not-content">
-      {featured.map((t) => (
+      {featured.map((topic) => (
         <li>
-          <a href={href(t.slug)}>
-            <em>{categories[t.category].label}</em>
-            <strong>{t.name}</strong>
-            <span>{t.summary}</span>
+          <a href={href(topic.slug)}>
+            <em>{categories[topic.category].label}</em>
+            <strong>{topic.name}</strong>
+            <span>{topic.summary}</span>
+            <b aria-hidden="true">記事を読む <span>→</span></b>
           </a>
         </li>
       ))}
     </ul>
   ) : (
-    <div class="ti-groups not-content">
-      {keys.map((k) => {
-        const items = topics.filter((t) => t.category === k);
-        if (items.length === 0) return null;
-        return (
-          <section>
-            <h3>
-              {categories[k].label}
-              <small>{categories[k].lead}</small>
-            </h3>
-            <ul>
-              {items.map((t) => (
-                <li>
-                  <a href={href(t.slug)}>
-                    <strong>{t.name}</strong>
-                    <span>{t.summary}</span>
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </section>
-        );
-      })}
+    <div class="ti-index not-content">
+      {!hideCategoryNav && <TopicCategoryNav />}
+      <div class="ti-groups">
+        {categoryOrder.map((key) => {
+          const items = orderedTopics(key);
+          return (
+            <section id={`topic-${key}`} aria-labelledby={`topic-title-${key}`}>
+              <header>
+                <div>
+                  <h3 id={`topic-title-${key}`}>{categories[key].label}</h3>
+                  <p>{categories[key].lead}</p>
+                </div>
+                <span class="ti-count">{items.length}記事</span>
+              </header>
+              <ul>
+                {items.map((topic) => (
+                  <li>
+                    <a class="ti-topic" href={href(topic.slug)}>
+                      <strong>{topic.name}</strong>
+                      <span>{topic.summary}</span>
+                      <b aria-hidden="true">読む →</b>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          );
+        })}
+      </div>
     </div>
   )
 }
@@ -61,13 +88,15 @@ const featured = topics.filter((t) => t.featured);
     padding: 0;
     list-style: none;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
     gap: 0.9rem;
   }
   .ti-featured a {
     display: grid;
-    gap: 0.25rem;
+    align-content: start;
+    gap: 0.45rem;
     height: 100%;
+    min-height: 10rem;
     padding: 1rem 1.1rem;
     border: 1px solid var(--sl-color-hairline-light);
     border-top: 3px solid var(--sl-color-accent);
@@ -78,41 +107,55 @@ const featured = topics.filter((t) => t.featured);
     transition: transform 0.2s, border-color 0.2s;
   }
   .ti-featured a:hover { transform: translateY(-2px); border-color: var(--sl-color-accent); }
-  .ti-featured em { font-style: normal; font-size: 0.72rem; font-weight: 700; color: var(--sl-color-accent); letter-spacing: 0.05em; }
+  .ti-featured em { font-style: normal; font-size: 0.72rem; font-weight: 700; color: var(--sl-color-accent); }
   .ti-featured strong { font-size: 1.02rem; }
-  .ti-featured span { font-size: 0.85rem; line-height: 1.55; color: var(--sl-color-text-muted); }
+  .ti-featured li > a > span { font-size: 0.85rem; line-height: 1.6; color: var(--sl-color-text-muted); }
+  .ti-featured b { align-self: end; margin-top: auto; padding-top: 0.45rem; font-size: 0.82rem; color: var(--sl-color-accent); }
 
-  .ti-groups { display: grid; gap: 1.8rem; margin: 1rem 0 2rem; }
-  .ti-groups h3 {
-    margin: 0 0 0.7rem;
-    font-size: 1.05rem;
-    font-weight: 800;
+  .ti-groups { display: grid; gap: 2.2rem; margin: 0 0 2rem; }
+  .ti-groups section { scroll-margin-top: 5rem; }
+  .ti-groups section > header {
     display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.2rem 0.8rem;
+    justify-content: space-between;
+    align-items: end;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.7rem;
+    border-bottom: 1px solid var(--sl-color-hairline-light);
   }
-  .ti-groups h3 small { font-size: 0.8rem; font-weight: 400; color: var(--sl-color-text-muted); }
+  .ti-groups h3 { margin: 0; font-size: 1.16rem; font-weight: 800; line-height: 1.45; }
+  .ti-groups section > header p { margin: 0.2rem 0 0; color: var(--sl-color-text-muted); font-size: 0.84rem; line-height: 1.5; }
+  .ti-count { flex: none; color: var(--sl-color-text-muted); font-size: 0.78rem; }
   .ti-groups ul {
     margin: 0;
     padding: 0;
     list-style: none;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 0.6rem;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr));
+    gap: 0.7rem;
   }
-  .ti-groups a {
+  .ti-topic {
     display: grid;
-    gap: 0.15rem;
+    align-content: start;
+    gap: 0.35rem;
     height: 100%;
-    padding: 0.7rem 0.9rem;
+    min-height: 8.4rem;
+    padding: 0.85rem 0.95rem;
     border: 1px solid var(--sl-color-hairline);
-    border-radius: 8px;
+    border-radius: 9px;
+    background: var(--sl-color-bg-card);
     text-decoration: none;
     color: var(--sl-color-text);
-    transition: border-color 0.2s, background 0.2s;
+    transition: border-color 0.2s, transform 0.2s;
   }
-  .ti-groups a:hover { border-color: var(--sl-color-accent); background: var(--sl-color-bg-card); }
-  .ti-groups strong { font-size: 0.95rem; }
-  .ti-groups span { font-size: 0.82rem; line-height: 1.5; color: var(--sl-color-text-muted); }
+  .ti-topic:hover { border-color: var(--sl-color-accent); transform: translateY(-1px); }
+  .ti-topic strong { font-size: 0.94rem; line-height: 1.45; }
+  .ti-topic > span { color: var(--sl-color-text-muted); font-size: 0.81rem; line-height: 1.55; }
+  .ti-topic b { align-self: end; margin-top: auto; padding-top: 0.2rem; color: var(--sl-color-accent); font-size: 0.76rem; font-weight: 650; }
+
+  @media (max-width: 640px) {
+    .ti-groups { gap: 1.8rem; }
+    .ti-groups ul { grid-template-columns: 1fr; }
+    .ti-topic { min-height: 0; }
+  }
 </style>

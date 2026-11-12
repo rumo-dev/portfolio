@@ -1,0 +1,62 @@
+---
+lastUpdated: 2026-10-28
+title: "技術解説：SSGI（画面空間の間接光）"
+description: "半解像度・8方向のサンプルで、画面内のカラーから拡散間接光を近似。"
+sidebar:
+  label: "SSGI"
+---
+
+import TopicSummary from "../../../components/TopicSummary.astro";
+import FeatureMedia from "../../../components/FeatureMedia.astro";
+import PageEnd from "../../../components/PageEnd.astro";
+
+<TopicSummary />
+
+## 概要
+
+直接光だけでは表現しにくい周囲からの色の回り込みを、画面空間の局所的な近似で加える実装です。
+
+## 効果比較スライダー
+
+<FeatureMedia title="SSGI の色の回り込み" beforeImage="/media/atmosfiore/captures/ssgi_off.png" afterImage="/media/atmosfiore/captures/ssgi_on.png" beforeLabel="SSGI OFF" afterLabel="SSGI ON" caption="AtmosFioreで撮影したON / OFF画像です。画面空間で取得できる間接光の参考として掲載し、差の大きさは誇張していません。" />
+
+## 設計判断・処理の流れ
+
+画面内の照明済みカラーを8方向から集め、法線と距離で重み付けして間接光を近似します。
+
+```text
+ライティング済みカラー・位置・法線・アルベド → 8方向のGather → 間接光バッファ → 合成
+```
+
+## 実装のポイント
+
+カメラ空間へ変換した位置から距離を求め、受光面と送光面の向き、深度差、距離で重み付けします。平均した放射輝度へアルベドと強度を掛けて出力します。サンプル数を8方向に固定し、探索量を明確にしました。
+
+### 現行コードの抜粋
+
+```hlsl
+        float receiver_cosine = saturate(dot(center_normal, direction_to_sample));
+        float source_cosine = saturate(dot(sample_normal, -direction_to_sample));
+        if (receiver_cosine <= 0.0f || source_cosine <= 0.0f) continue;
+
+        float separation = abs(sample_position.z - center_position.z);
+        float thickness_weight = saturate(1.0f - separation / max(ssgi_radius + ssgi_thickness, 1.0e-3f));
+        float distance_weight = rcp(1.0f + distance_to_sample * distance_to_sample);
+        float weight = receiver_cosine * source_cosine * thickness_weight * distance_weight;
+        float3 incoming_radiance = lit_scene.SampleLevel(sampler_states[LINEAR_CLAMP], sample_uv, 0).rgb;
+        gathered += incoming_radiance * weight;
+        weight_sum += weight;
+    }
+```
+
+## 制約・検証
+
+画面内の可視面だけを使う単一バウンス相当の近似です。完全なGIや経路追跡ではなく、遮蔽の扱いや画面端の情報欠落に制約があります。物理的な正確性や性能改善率は未測定です。
+
+## ソースコード
+
+[ssgi_ps.hlsl — 実装を読む](https://github.com/rumo-dev/AtmosFiore/blob/master/Project/source/Engine/Graphics/Shader/ssgi_ps.hlsl)
+
+公開版と開発中のローカル版では、更新時点が異なる場合があります。
+
+<PageEnd />

@@ -1,237 +1,59 @@
 ---
+lastUpdated: 2026-10-28
 title: "技術解説：Spot Light（スポットライト）"
-description: 内側・外側角度によるコーン状の減衰を持つ、懐中電灯やスポットライトのような方向性光源の実装。
+description: "内外のコーン角による滑らかな角度減衰と、有限距離でのカットオフを持つスポットライト。"
 sidebar:
   label: "Spot Light"
-  order: 6
 ---
 
-import { Aside } from "@astrojs/starlight/components";
-import ImgComparison from "../../../components/ImgComparison.astro";
-import dummyImg from "../../../assets/dummy00.png";
-import houstonImg from "../../../assets/dummy01.png";
 import TopicSummary from "../../../components/TopicSummary.astro";
+import FeatureMedia from "../../../components/FeatureMedia.astro";
 import PageEnd from "../../../components/PageEnd.astro";
 
 <TopicSummary />
 
-懐中電灯やスポットライトのような、特定方向に円錐状の光を放つ光源を表現するため、AtmosFioreでは **Spot Light（スポットライト）** を実装しています。Point Lightの距離減衰に加え、内側角度・外側角度による滑らかなコーン状の減衰を組み合わせています。
+## 概要
 
-## Spot Lightの基本概念
+懐中電灯のように向きと広がりを持つ光を表すため、点光源の位置・半径・光量に加え、方向と内外2つの角度を持たせています。
 
-点灯前後をスライダーで比較できます。
+## 効果比較スライダー
 
-<ImgComparison
-  leftImage={dummyImg.src}
-  rightImage={houstonImg.src}
-  altLeft="消灯"
-  altRight="点灯"
-/>
+<FeatureMedia title="スポットライトの照射範囲" beforeImage="/media/atmosfiore/captures/spot_off.png" afterImage="/media/atmosfiore/captures/spot_on.png" beforeLabel="Spot Light OFF" afterLabel="Spot Light ON" caption="AtmosFioreで撮影した同一シーンの比較です。円錐状の照射と距離減衰を確認できます。" />
 
-スポットライトはPoint Lightに「方向（direction）」「内側角度（innerAngle）」「外側角度（outerAngle）」を加えたモデルです。ライト方向と、ライトからピクセルへの方向のなす角度が内側角度未満なら減衰なし、外側角度を超えたら完全に光が届かないものとして扱い、その間を`smoothstep`で滑らかに補間します。
+## 設計判断・処理の流れ
 
-### GPU転送用データ構造
-
-```cpp
-struct SpotLightGpu
-{
-    dx::XMFLOAT3 position;
-    float        radius;
-
-    dx::XMFLOAT3 direction;
-    float        intensity;
-
-    dx::XMFLOAT3 color;
-    float        innerAngle;
-
-    float        outerAngle;
-    float        padding[3];
-};
-```
-
-## C++実装
-
-```cpp
-/**
- * @brief スポットライトクラス
- *
- * 指定方向に円錐状に光を照らすライト
- */
-class SpotLight : public LightBase
-{
-public:
-	SpotLight()
-	{
-		position = { 0, 0, 0 };
-		direction = { 0, -1, 0 };
-		radius = 10.0f;
-		intensity = 1.0f;
-		innerAngle = 0.5f;
-		outerAngle = 0.7f;
-		diffuseColor = { 1.0f, 1.0f, 1.0f, 1.0f };
-	}
-
-	struct SpotLightGpu
-	{
-		dx::XMFLOAT3 position;
-		float radius;
-
-		dx::XMFLOAT3 direction;
-		float intensity;
-
-		dx::XMFLOAT3 color;
-		float innerAngle;
-
-		float outerAngle;
-		float padding[3];
-	};
-
-	dx::XMFLOAT3 position;
-	dx::XMFLOAT3 direction;
-	float radius;
-	float intensity;
-	float innerAngle;
-	float outerAngle;
-	float padding[1] = {};
-
-	void update() override {}
-
-	void draw_imgui(const char* label = "SpotLight") override
-	{
-		if (ImGui::TreeNode(label))
-		{
-			ImGui::ColorEdit3("Diffuse", (float*)&diffuseColor);
-			ImGui::DragFloat3("Position", (float*)&position, 0.1f);
-			ImGui::DragFloat3("Direction", (float*)&direction, 0.1f);
-			ImGui::DragFloat("Radius", &radius, 0.1f, 0.1f, 200.0f);
-			ImGui::DragFloat("Intensity", &intensity, 0.01f, 0.0f, 10.0f);
-			ImGui::DragFloat("Inner Angle", &innerAngle, 0.01f, 0.0f, 3.14f);
-			ImGui::DragFloat("Outer Angle", &outerAngle, 0.01f, 0.0f, 3.14f);
-			ImGui::TreePop();
-		}
-	}
-};
-```
-
-管理クラス（`SpotLightManager`）はPoint Lightと同一のパターン（StructuredBuffer + フラスタムカリング + Dynamic Map/Unmap）で実装されており、GPU転送はレジスタ`t9`（StructuredBuffer）・`b6`（ライト数定数バッファ）にバインドされます。
-
-## HLSL実装
-
-```hlsl
-// spot_light.hlsli
-struct SpotLight_GPU
-{
-    float3 position;
-    float  radius;
-
-    float3 direction;
-    float  intensity;
-
-    float3 color;
-    float  innerAngle;
-
-    float  outerAngle;
-    float  padding[3];
-};
-
-StructuredBuffer<SpotLight_GPU> spotLights : register(t9);
-cbuffer CB_SpotLightCount : register(b6)
-{
-    uint numSpotLights;
-    uint SLpadding[3];
-};
-```
-
-```hlsl
-// deferred_lighting_ps.hlsl（抜粋）
-for (int i = 0; i < numSpotLights; ++i)
-{
-    if (spotLights[i].intensity <= 0.0f || spotLights[i].radius <= 0.0f)
-        continue;
-
-    float3 light_vector = spotLights[i].position - position;
-    float dist = length(light_vector);
-    if (dist >= spotLights[i].radius)
-        continue;
-
-    float3 Ls = light_vector / max(dist, 0.0001f);
-    float spotNoL = max(0.0f, dot(N, Ls));
-    if (spotNoL <= 0.0f)
-        continue;
-
-    // ── コーン状の角度減衰 ──────────────────────────
-    float3 lightDir = normalize(spotLights[i].direction);
-    float cosAngle  = dot(-Ls, lightDir);          // ピクセル方向とライト方向のなす角
-    float cosInner  = cos(spotLights[i].innerAngle); // 内側角度: ここまでは減衰なし
-    float cosOuter  = cos(spotLights[i].outerAngle); // 外側角度: ここを超えると光が届かない
-
-    float spotAttenuation = 1.0f;
-    if (cosAngle < cosOuter)
-    {
-        spotAttenuation = 0.0f; // コーンの外
-    }
-    else if (cosAngle < cosInner)
-    {
-        // 内側角度と外側角度の間を滑らかに補間
-        spotAttenuation = smoothstep(cosOuter, cosInner, cosAngle);
-    }
-
-    // ── 距離減衰（Point Lightと同一モデル）─────────────
-    float distanceAttenuation = pow(max(0.0f, 1.0f - (dist / spotLights[i].radius)), 2.0f);
-    float totalAttenuation = spotAttenuation * distanceAttenuation;
-
-    if (totalAttenuation <= 0.0f)
-        continue;
-
-    float3 spotLi = spotLights[i].color * spotLights[i].intensity * totalAttenuation;
-    float3 H = normalize(V + Ls);
-    float NoH = max(0.0f, dot(N, H));
-    float HoV = max(0.0f, dot(H, V));
-
-    diffuse  += spotLi * spotNoL * brdf_lambertian(f0, f90, c_diff, HoV);
-    specular += spotLi * spotNoL * brdf_specular_ggx(f0, f90, alpha_roughness, HoV, spotNoL, NoV, NoH);
-}
-```
-
-## 処理の詳細
-
-### 1. cos角度によるコーン判定
-
-角度そのものを比較するのではなく、`cos(innerAngle)` / `cos(outerAngle)`をあらかじめ計算しておき、`dot(-Ls, lightDir)`（内積＝cos角度）と直接比較することで、シェーダー内での`acos`呼び出し（コストが高い）を回避しています。
-
-### 2. 内側・外側角度によるソフトエッジ
-
-```hlsl
-float spotAttenuation = (cosAngle < cosOuter) ? 0.0f
-    : (cosAngle < cosInner) ? smoothstep(cosOuter, cosInner, cosAngle) : 1.0f;
-```
-
-内側角度の内部では常に100%の光量、外側角度の外側では完全に0、その間を`smoothstep`で滑らかに繋ぐことで、スポットライト特有のソフトなコーンエッジを表現しています。境界が硬い（ステップ状の）ライトになるのを防いでいます。
-
-### 3. 距離減衰との掛け合わせ
-
-角度減衰（`spotAttenuation`）と距離減衰（`distanceAttenuation`）は独立して計算されたのち乗算されるため、コーンの中心軸に近くても半径外なら光が届かず、逆に半径内でもコーンの外なら光が届かないという、直感的な振る舞いになります。
+コーンの内外の角度による減衰と、距離による減衰を組み合わせます。寄与がゼロになる場合は後続のBRDF評価を省略します。
 
 ## 実装のポイント
 
-### 1. Point Lightとの実装パターンの共通化
+光源からの方向とライトの向きの内積を、内外の角度のcosと比較します。外側より外ではゼロ、内側では1、その間をsmoothstepで補間し、コーン境界の光量を滑らかにします。現在のシェーダーでは角度のcosを照明ループ内で算出しています。
 
-`SpotLightManager`は`PointLightManager`とほぼ同一の設計（StructuredBuffer・フラスタムカリング・Dynamic Map/Unmap・デバッグ球描画）を踏襲しており、光源管理システム全体で一貫したコードパターンを維持しています。
+距離減衰は半径でゼロになるcutoffに、距離の二乗と近距離の安定化項を組み合わせます。角度減衰との積がゼロなら、後続のBRDF評価を省略します。
 
-### 2. 早期棄却によるコスト削減
+SpotLightManagerは点光源と同様にカリングとDynamic StructuredBufferによる転送を担当します。照明用のStructuredBufferはt9、光源数の定数バッファはb6で参照します。
 
-`totalAttenuation <= 0.0f`の時点で`continue`することで、コーンの外側にあるピクセルに対する不要なBRDF計算（`brdf_lambertian` / `brdf_specular_ggx`の呼び出し）をスキップしています。
+### 現行コードの抜粋
 
-### 3. GUI上での角度パラメータ（ラジアン）
+```hlsl
+        float distanceCutoff = pow(max(0.0f, 1.0f - pow(dist / spotLights[spotLightIndex].radius, 4.0)), 2.0f);
+        float distanceAttenuation = distanceCutoff / (683.0 * (dist * dist + 0.04));
+        float totalAttenuation = spotAttenuation * distanceAttenuation;
 
-`innerAngle` / `outerAngle`はラジアン単位で保持され、ImGui上では`ImGui::DragFloat`で0〜3.14（約180°）の範囲を直接編集できるようになっています。
+        if (totalAttenuation <= 0.0f)
+        {
+            continue;
+        }
+```
 
-<Aside type="note">
-  スポットライトのStructuredBufferはレジスタ`t9`、ライト数の定数バッファは`b6`にバインドされます。
-</Aside>
+## 制約・検証
 
-<Aside type="caution">
-  `innerAngle`が`outerAngle`より大きい値に設定されると、`smoothstep`の引数が逆転してアーティファクトが発生するため、GUIやデータ側で`innerAngle <= outerAngle`を保証する必要があります。
-</Aside>
+コーン境界、光源に近い位置、照射半径の端で見た目が連続するかを確認します。スポットライトの照明を扱うことと、専用シャドウマップの実装範囲は別に評価します。
+
+## ソースコード
+
+- [spot_light_manager.cpp — 管理と転送](https://github.com/rumo-dev/AtmosFiore/blob/master/Project/source/Engine/System/Manager/Light/spot_light_manager.cpp)
+- [deferred_lighting_ps.hlsl — 光量の計算](https://github.com/rumo-dev/AtmosFiore/blob/master/Project/source/Engine/Graphics/Shader/deferred_lighting_ps.hlsl)
+
+公開版と開発中のローカル版では、更新時点が異なる場合があります。
 
 <PageEnd />

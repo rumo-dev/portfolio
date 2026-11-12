@@ -1,4 +1,5 @@
 ---
+lastUpdated: 2026-10-28
 title: "技術解説：Tone Mapping（トーンマッピング）"
 description: HDRレンダリングされた高輝度カラーをSDRディスプレイに適切に表示するためのトーンマッピング。34種類のアルゴリズムを実装。
 sidebar:
@@ -7,38 +8,22 @@ sidebar:
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import ImgComparison from "../../../components/ImgComparison.astro";
-import dummyImg from "../../../assets/dummy00.png";
-import houstonImg from "../../../assets/dummy01.png";
+import FeatureMedia from "../../../components/FeatureMedia.astro";
 import DesignDecision from "../../../components/DesignDecision.astro";
 import TopicSummary from "../../../components/TopicSummary.astro";
 import PageEnd from "../../../components/PageEnd.astro";
 
 <TopicSummary />
 
+## 概要
+
 Adaptationで露出調整済みのHDRカラーを最終的にディスプレイへ表示するため、AtmosFioreでは **Tone Mapping** を実装しています。ACES・Reinhard・AgX・GT（Uchimura）など、実に34種類のアルゴリズムを実行時に切り替えられるのが最大の特徴です。
 
-## Tone Mappingの基本概念
+## 効果比較スライダー
 
-トーンマッピングの適用前後をスライダーで比較できます。
+<FeatureMedia title="HDR から表示色への変換" beforeImage="/media/atmosfiore/captures/tone_off.png" afterImage="/media/atmosfiore/captures/tone_on.png" beforeLabel="Tone Mapping OFF" afterLabel="Tone Mapping ON" caption="AtmosFioreで撮影した同一テストシーンの比較です。表示向けの階調変換の違いを確認できます。" />
 
-<ImgComparison
-  leftImage={dummyImg.src}
-  rightImage={houstonImg.src}
-  altLeft="トーンマッピング前"
-  altRight="トーンマッピング後"
-/>
-
-HDRレンダリングでは輝度値が1.0を超える（真っ白より明るい）ピクセルが多数存在します。これをそのままSDRディスプレイ（0.0〜1.0）に出力すると白飛びが発生するため、非線形な圧縮関数（トーンカーブ）を通して滑らかにクランプする必要があります。
-
-### 処理フロー
-
-1. **Exposure適用済みHDRカラーの入力**
-2. **選択したアルゴリズムでトーンマッピング**
-3. **ガンマ補正**（`pow(color, 1.0 / gamma)`）
-4. **SDRバッファ（R8G8B8A8_UNORM）への出力**
-
-## 設計判断：なぜこの手法か
+## 設計判断・処理の流れ
 
 <DesignDecision
   chosen="ACES を既定にし、34種類のアルゴリズムを実行時に切り替えて比較できる構成にした"
@@ -50,7 +35,25 @@ HDRレンダリングでは輝度値が1.0を超える（真っ白より明る�
   ]}
 />
 
-## C++実装
+### 処理の流れ
+
+1. **Exposure適用済みHDRカラーの入力**
+2. **選択したアルゴリズムでトーンマッピング**
+3. **ガンマ補正**（`pow(color, 1.0 / gamma)`）
+4. **SDRバッファ（R8G8B8A8_UNORM）への出力**
+
+## 実装のポイント
+
+### 基本的な考え方
+
+
+HDRレンダリングでは輝度値が1.0を超える（真っ白より明るい）ピクセルが多数存在します。これをそのままSDRディスプレイ（0.0〜1.0）に出力すると白飛びが発生するため、非線形な圧縮関数（トーンカーブ）を通して滑らかにクランプする必要があります。
+
+
+### C++ の実装
+
+<details>
+<summary>C++ のコードを開く</summary>
 
 ```cpp
 class ToneMapping
@@ -108,9 +111,11 @@ private:
 };
 ```
 
-## HLSL実装
+</details>
 
-### メインシェーダー（ディスパッチャ）
+### HLSL の実装
+
+#### メインシェーダー（ディスパッチャ）
 
 ```hlsl
 // tonemapping_ps.hlsl
@@ -132,7 +137,10 @@ float4 main(VS_OUT pin) : SV_TARGET
 }
 ```
 
-### アルゴリズム例（`tonemapping_algorithms.hlsli`）
+#### アルゴリズム例（`tonemapping_algorithms.hlsli`）
+
+<details>
+<summary>HLSL のコードを開く</summary>
 
 ```hlsl
 cbuffer ToneMappingConfig : register(b0)
@@ -184,18 +192,20 @@ float3 ToneMap_ReinhardExtended(float3 x)
 }
 ```
 
+</details>
+
 `ApplyToneMapping()` 内部では `mapping_type` に応じて上記のような34個の関数を分岐呼び出しし、GT/Uchimuraでは `shoulder` / `max_white`、CustomCurveでは `shoulder` / `linear_strength` / `linear_angle` / `toe_strength` など、アルゴリズムごとに異なるパラメータセットを参照します。
 
-## 処理の詳細
+### 処理の詳細
 
-### 1. アルゴリズムの選択指針
+#### アルゴリズムの選択指針
 
 - **ACES / ACESApprox**：映画的な階調再現。ハイライトのロールオフが自然
 - **AgX / AgXPunchy**：Blender発の彩度保持型トーンマッピング。彩度崩壊が少ない
 - **GT（Uchimura）**：ゲーム向けに設計された、シャドウ・ハイライト双方を精密制御できる汎用カーブ
 - **Reinhard系**：実装が単純で軽量だが、高輝度域での彩度低下が目立ちやすい
 
-### 2. パラメータの相互依存
+#### パラメータの相互依存
 
 ```hlsl
 // GT / Uchimura, ReinhardExtended, Drago/Ward/Logarithmic で
@@ -204,19 +214,17 @@ float3 ToneMap_ReinhardExtended(float3 x)
 
 同じ `max_white` パラメータでも、アルゴリズムによって「白飛びの基準輝度」であったり「HDR白色点」であったりと意味が異なるため、C++側のGUIでは選択中のアルゴリズムに応じて表示するスライダーを動的に切り替えています。
 
-### 3. ガンマ補正の分離
+#### ガンマ補正の分離
 
 トーンマッピング関数自体は線形空間での圧縮のみを担当し、最終行の `pow(color, 1.0 / gamma)` でsRGB相当のガンマ補正を独立して適用しています。
 
-## 実装のポイント
-
-### 1. 34アルゴリズムの一元管理
+### 34アルゴリズムの一元管理
 
 すべてのアルゴリズムを1つの `.hlsli` ファイルに集約し、`mapping_type` の整数値で分岐することで、シェーダーの再コンパイルなしにC++側から動的に切り替え可能にしています。
 
-### 2. パイプライン最終段としての配置
+### パイプライン最終段としての配置
 
-Tone Mappingは必ずAdaptation（自動露出）の後、パイプラインの最終段に配置されます。これより手前のすべてのエフェクトは線形HDR空間で処理され、Tone Mappingで初めてディスプレイ向けのSDR値に変換されます。
+既定の順序ではAdaptationの後に配置し、HDRカラーを表示向けに変換します。現在のPost_Process_Managerでは順序を編集できるため、表示変換を早い段階へ移動すると後続エフェクトの入力も変わります。調整時はHDR処理との順序を確認します。
 
 <Aside type="note">
   デバッグGUIでは `ImGui::Combo`
@@ -225,9 +233,17 @@ Tone Mappingは必ずAdaptation（自動露出）の後、パイプラインの�
   CustomCurveなど）のスライダーのみを表示します。
 </Aside>
 
+## 制約・検証
+
 <Aside type="caution">
   Tone
   MappingをAdaptationより前段に配置すると、自動露出が正しく機能しません（露出調整はトーンマッピング前の線形HDR値に対して行う必要があるため）。
 </Aside>
+
+## ソースコード
+
+- [tonemapping_ps.hlsl — 実装を読む](https://github.com/rumo-dev/AtmosFiore/blob/master/Project/source/Engine/Graphics/Shader/tonemapping_ps.hlsl)
+
+公開版と開発中のローカル版では、更新時点が異なる場合があります。
 
 <PageEnd />

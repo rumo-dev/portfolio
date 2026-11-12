@@ -1,0 +1,43 @@
+---
+import { categoryOrder, categories, topics } from "../data/topics";
+---
+
+<nav class="ti-category-nav not-content" aria-label="技術解説のカテゴリ">
+  {categoryOrder.map((key) => {
+    const count = topics.filter((topic) => topic.category === key).length;
+    return (
+      <a href={`#topic-${key}`}>
+        <span>{categories[key].label}</span>
+        <small>{count}本</small>
+      </a>
+    );
+  })}
+</nav>
+
+<style>
+  .ti-category-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    margin: 1rem 0 2rem;
+  }
+  .ti-category-nav a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--sl-color-hairline-light);
+    border-radius: 999px;
+    background: var(--sl-color-bg-card);
+    color: var(--sl-color-text);
+    font-size: 0.86rem;
+    font-weight: 650;
+    text-decoration: none;
+  }
+  .ti-category-nav a:hover { border-color: var(--sl-color-accent); color: var(--sl-color-accent); }
+  .ti-category-nav small { color: var(--sl-color-text-muted); font-size: 0.72rem; font-weight: 500; }
+
+  @media (max-width: 640px) {
+    .ti-category-nav a { font-size: 0.82rem; }
+  }
+</style>

@@ -1,4 +1,5 @@
 ---
+lastUpdated: 2026-10-28
 title: "技術解説：Bloom（発光表現）"
 description: 高輝度部分の抽出と多段ガウシアンブラーによる発光表現。窓からの直射光や光源のにじみをリアルに再現。
 sidebar:
@@ -7,38 +8,22 @@ sidebar:
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import ImgComparison from "../../../components/ImgComparison.astro";
-import dummyImg from "../../../assets/dummy00.png";
-import houstonImg from "../../../assets/dummy01.png";
+import FeatureMedia from "../../../components/FeatureMedia.astro";
 import DesignDecision from "../../../components/DesignDecision.astro";
 import TopicSummary from "../../../components/TopicSummary.astro";
 import PageEnd from "../../../components/PageEnd.astro";
 
 <TopicSummary />
 
+## 概要
+
 HDRレンダリングされたシーンの高輝度部分を光源のようににじませて表現するため、AtmosFioreでは **Bloom** を実装しています。単純なぼかしではなく、複数解像度でのダウンサンプル・アップサンプルを組み合わせることで、広がりのある自然な発光を低コストで再現しています。
 
-## Bloomの基本概念
+## 効果比較スライダー
 
-Bloomの有無をスライダーで比較できます。
+<FeatureMedia title="Bloom のグロー効果" beforeImage="/media/atmosfiore/captures/bloom_off.png" afterImage="/media/atmosfiore/captures/bloom_on.png" beforeLabel="Bloom OFF" afterLabel="Bloom ON" caption="AtmosFioreで撮影したON / OFF画像です。今回のシーンでは差が小さいため、強い発光差として誇張せず掲載しています。" />
 
-<ImgComparison
-  leftImage={dummyImg.src}
-  rightImage={houstonImg.src}
-  altLeft="Bloomオフ"
-  altRight="Bloomオン"
-/>
-
-Bloomは「輝度抽出 → 複数段階のガウシアンブラー → 合成」という3段構成のポストエフェクトです。単一解像度でブラー半径を大きくすると処理コストが爆発的に増えるため、AtmosFioreではミップチェインのように段階的に解像度を落としながらブラーをかける手法を採用しています。
-
-### 処理フロー
-
-1. **輝度抽出（Glow Extraction）**：しきい値を超えたピクセルのみを抽出
-2. **ダウンサンプリング + ガウシアンブラー**：6段階の解像度でピンポンブラーを実行
-3. **アップサンプリング + 合成**：全段の結果を加算合成
-4. **最終合成**：元のHDR画像にBloom結果を加算
-
-## 設計判断：なぜこの手法か
+## 設計判断・処理の流れ
 
 <DesignDecision
   chosen="輝度抽出 → 6段階のダウンサンプル＋ガウシアンブラー → 加算合成（ミップチェイン方式）"
@@ -48,7 +33,25 @@ Bloomは「輝度抽出 → 複数段階のガウシアンブラー → 合成�
   ]}
 />
 
-## C++実装
+### 処理の流れ
+
+1. **輝度抽出（Glow Extraction）**：しきい値を超えたピクセルのみを抽出
+2. **ダウンサンプリング + ガウシアンブラー**：6段階の解像度でピンポンブラーを実行
+3. **アップサンプリング + 合成**：全段の結果を加算合成
+4. **最終合成**：元のHDR画像にBloom結果を加算
+
+## 実装のポイント
+
+### 基本的な考え方
+
+
+Bloomは「輝度抽出 → 複数段階のガウシアンブラー → 合成」という3段構成のポストエフェクトです。単一解像度でブラー半径を大きくすると処理コストが爆発的に増えるため、AtmosFioreではミップチェインのように段階的に解像度を落としながらブラーをかける手法を採用しています。
+
+
+### C++ の実装
+
+<details>
+<summary>C++ のコードを開く</summary>
 
 ```cpp
 /**
@@ -110,7 +113,9 @@ private:
 };
 ```
 
-### 実行部分（`make`）の要点
+</details>
+
+#### 実行部分（`make`）の要点
 
 ```cpp
 void bloom::make(ID3D11DeviceContext* immediate_context, ID3D11ShaderResourceView* color_map)
@@ -146,9 +151,9 @@ void bloom::make(ID3D11DeviceContext* immediate_context, ID3D11ShaderResourceVie
 }
 ```
 
-## HLSL実装
+### HLSL の実装
 
-### 輝度抽出
+#### 輝度抽出
 
 ```hlsl
 // glow_extraction_ps.hlsl
@@ -163,7 +168,7 @@ float4 main(float4 position : SV_POSITION, float2 texcoord : TEXCOORD) : SV_TARG
 }
 ```
 
-### ガウシアンブラー（線形サンプリングによる高速化）
+#### ガウシアンブラー（線形サンプリングによる高速化）
 
 ```hlsl
 // gaussian_blur_horizontal_ps.hlsl
@@ -188,7 +193,7 @@ float4 main(float4 position : SV_POSITION, float2 texcoord : TEXCOORD) : SV_TARG
 }
 ```
 
-### アップサンプリング合成 & 最終合成
+#### アップサンプリング合成 & 最終合成
 
 ```hlsl
 // gaussian_blur_upsampling_ps.hlsl
@@ -218,17 +223,17 @@ float4 main(VS_OUT pin) : SV_TARGET
 }
 ```
 
-## 処理の詳細
+### 処理の詳細
 
-### 1. 6段階のミップチェイン構造
+#### 6段階のミップチェイン構造
 
 `downsampled_count = 6` により、フル解像度から1/64解像度まで段階的にブラーをかけます。低解像度側ほど大きな半径のボケを表現でき、高解像度側は輪郭の鋭いにじみを担当します。
 
-### 2. Linear Sampling最適化
+#### Linear Sampling最適化
 
 隣接する2テクセルを1回のサンプリングで平均化するテクニックにより、通常より少ないサンプル数で同等品質のガウシアンブラーを実現しています。
 
-### 3. ミップマップ生成による後段連携
+#### ミップマップ生成による後段連携
 
 ```cpp
 bloom_final->GenerateMips(immediate_context);
@@ -236,13 +241,11 @@ bloom_final->GenerateMips(immediate_context);
 
 最終出力に対してフルミップチェインを生成しておくことで、後段のAdaptation（輝度計算）が最上位ミップ（1x1）を平均輝度として参照できます。
 
-## 実装のポイント
-
-### 1. ピンポンバッファによるメモリ効率化
+### ピンポンバッファによるメモリ効率化
 
 `gaussian_blur[downsampled_count][2]` の2枚1組バッファを使い回すことで、水平・垂直ブラーを交互に適用しながら余分なメモリ確保を避けています。
 
-### 2. しきい値ベースの抽出
+### しきい値ベースの抽出
 
 `step(bloom_extraction_threshold, ...)` により、しきい値未満のピクセルは完全に0として扱われるため、Bloomは「明るい部分だけ」に選択的に発生します。
 
@@ -251,9 +254,17 @@ bloom_final->GenerateMips(immediate_context);
   Quadを使用したポストプロセス前提設計です。
 </Aside>
 
+## 制約・検証
+
 <Aside type="caution">
   入力SRV（`color_map`）は処理中にRTVとしてバインドしてはならず、同一リソースのSRV/RTV同時使用はDirectX
   11の未定義動作となります。
 </Aside>
+
+## ソースコード
+
+- [Bloom.cpp — 実装を読む](https://github.com/rumo-dev/AtmosFiore/blob/master/Project/source/Game/Effect/bloom/Bloom.cpp)
+
+公開版と開発中のローカル版では、更新時点が異なる場合があります。
 
 <PageEnd />

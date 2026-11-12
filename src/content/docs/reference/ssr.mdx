@@ -1,0 +1,63 @@
+---
+lastUpdated: 2026-10-28
+title: "技術解説：SSR（画面空間の反射）"
+description: "投影した反射レイを深度と比較し、半解像度で画面内の映り込みを求める実装。"
+sidebar:
+  label: "SSR"
+---
+
+import TopicSummary from "../../../components/TopicSummary.astro";
+import FeatureMedia from "../../../components/FeatureMedia.astro";
+import PageEnd from "../../../components/PageEnd.astro";
+
+<TopicSummary />
+
+## 概要
+
+床や金属面に周囲の形状を映すため、既存のカラーと深度を使うSSRを追加しました。
+
+## 効果比較スライダー
+
+<FeatureMedia title="SSR の画面内反射" beforeImage="/media/atmosfiore/captures/ssr_off.png" afterImage="/media/atmosfiore/captures/ssr_on.png" beforeLabel="SSR OFF" afterLabel="SSR ON" caption="AtmosFioreで撮影したON / OFF画像です。反射対象が画面外へ出る場合の制約も記事内で説明しています。" />
+
+## 設計判断・処理の流れ
+
+画面内の深度で反射レイを探索し、粗さや金属度で対象を限定します。画面端や距離に応じて寄与を減衰させます。
+
+```text
+HDRカラー・G-Buffer・深度 → 半解像度の反射探索 → 反射差分の合成
+```
+
+## 実装のポイント
+
+反射方向を投影し、画面上を最大ステップ数で区切って探索します。逆wを用いてレイの深度を透視補正し、深度バッファから復元した値との差が厚みの範囲内ならヒットとします。粗さと金属度による早期除外、Fresnel・画面端・距離による減衰を組み合わせています。
+
+### 現行コードの抜粋
+
+```hlsl
+        float reciprocal_w = lerp(reciprocal_w0, reciprocal_w1, t);
+        float ray_z = lerp(z_over_w0, z_over_w1, t) / max(reciprocal_w, 1.0e-6f);
+        // The depth buffer stores projected Z; reconstruct view-space Z
+        // directly so the common ray-march step needs one texture read.
+        float raw_depth = scene_depth.SampleLevel(sampler_states[POINT_CLAMP], sample_uv, 0);
+        float depth_denominator = raw_depth - projection._33;
+        if (abs(depth_denominator) < 1.0e-6f)
+            continue;
+        float scene_z = projection._43 / depth_denominator;
+        float depth_delta = ray_z - scene_z;
+        float traveled = ray_length * t;
+        if (traveled > surface_thickness * 2.0f && depth_delta >= 0.0f && depth_delta <= surface_thickness)
+        {
+```
+
+## 制約・検証
+
+画面外・遮蔽された対象は映りません。ステップ上限があるため長いレイでは画素を飛び越える場合があり、薄い形状の欠落やカメラ移動時の不連続は検証が必要です。初期設定ではSSRは無効です。
+
+## ソースコード
+
+[ssr_ps.hlsl — 実装を読む](https://github.com/rumo-dev/AtmosFiore/blob/master/Project/source/Engine/Graphics/Shader/ssr_ps.hlsl)
+
+公開版と開発中のローカル版では、更新時点が異なる場合があります。
+
+<PageEnd />

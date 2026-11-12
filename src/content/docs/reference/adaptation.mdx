@@ -1,46 +1,52 @@
 ---
+lastUpdated: 2026-11-11
 title: "技術解説：Adaptation（自動露出）"
 description: シーンの輝度に応じた自動露出調整による目の順応シミュレーション。
 sidebar:
-  label: "Adaptation（自動露出）"
+  label: "Adaptation"
   order: 20
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import ImageGrid from '../../../components/ImageGrid.astro';
-import ImgComparison from '../../../components/ImgComparison.astro';
-import OnImage from "../../../assets/adaptation_on.png";
-import OffImage from "../../../assets/adaptation_off.png";
+import FeatureMedia from "../../../components/FeatureMedia.astro";
 import TopicSummary from "../../../components/TopicSummary.astro";
 import PageEnd from "../../../components/PageEnd.astro";
 
 <TopicSummary />
 
+## 概要
+
 シーンの輝度に応じて露出を自動調整し、目の順応をシミュレートするため、AtmosFioreでは **Adaptation（自動露出）** を採用しています。
 
-## Adaptationの基本概念
+## 効果比較スライダー
 
-Adaptation（自動露出）の有無をスライダーで比較できます。
+<FeatureMedia title="明るさに応じた露出順応" beforeImage="/media/atmosfiore/captures/adaptation_off.png" afterImage="/media/atmosfiore/captures/adaptation_on.png" beforeLabel="順応 OFF" afterLabel="順応 ON" caption="撮影したフレームの比較です。明暗変化に対する時間的な追従は動画で確認できます。" />
 
-<ImgComparison
-  leftImage={OffImage.src}
-  rightImage={OnImage.src}
-  altLeft="Adaptationオフ"
-  altRight="Adaptationオン"
-/>
+## 設計判断・処理の流れ
 
-Adaptationは、シーンの平均輝度を計算し、目の順応をシミュレートして露出を自動調整する技術です。これにより、暗い場所から明るい場所に移動した際の目の順応を再現できます。
+露出値の更新と画像への適用を分け、時間経過による順応を表現します。明るくなる場合と暗くなる場合を別の速度で調整できる構成です。
 
-### 処理フロー
+### 処理の流れ
 
 1. **シーン輝度の計算**: シーンの平均輝度を計算
 2. **露出値の更新**: 前フレームの露出値と目標露出値の間を補間
 3. **露出調整**: 計算された露出値をHDR画像に適用
 4. **Tone Mappingへの入力**: 露出調整済みのHDR画像をTone Mappingに入力
 
-## C++実装
+## 実装のポイント
+
+### 基本的な考え方
+
+
+Adaptationは、シーンの平均輝度を計算し、目の順応をシミュレートして露出を自動調整する技術です。これにより、暗い場所から明るい場所に移動した際の目の順応を再現できます。
+
+
+### C++ の実装
 
 以下は、AtmosFioreのAdaptationクラスの実装です。
+
+<details>
+<summary>C++ のコードを開く</summary>
 
 ```cpp
 /**
@@ -93,11 +99,16 @@ private:
 };
 ```
 
-## HLSL実装
+</details>
+
+### HLSL の実装
 
 以下は、AtmosFioreのAdaptation処理で使用されるHLSLシェーダーコードです。
 
-### 輝度計算シェーダー（Compute Shader）
+#### 輝度計算シェーダー（Compute Shader）
+
+<details>
+<summary>HLSL のコードを開く</summary>
 
 ```hlsl
 // adaptation_cs.hlsl - 輝度計算と露出更新
@@ -155,7 +166,9 @@ void main(uint3 DTid : SV_DispatchThreadID)
 }
 ```
 
-### 露出適用シェーダー（Pixel Shader）
+</details>
+
+#### 露出適用シェーダー（Pixel Shader）
 
 ```hlsl
 // adaptation_ps.hlsl - 露出適用
@@ -178,9 +191,9 @@ float4 main(VS_OUT pin) : SV_TARGET
 }
 ```
 
-## 処理の詳細
+### 処理の詳細
 
-### 1. 輝度計算
+#### 輝度計算
 
 シーンの平均輝度を計算します。実際の実装では、Mipmapを使用して効率的に計算します。最上位のミップマップレベル（1x1ピクセル）がシーン全体の平均輝度を表します。
 
@@ -189,7 +202,7 @@ float4 main(VS_OUT pin) : SV_TARGET
 float luminance = dot(color.rgb, float3(0.2126f, 0.7152f, 0.0722f));
 ```
 
-### 2. 露出値の更新
+#### 露出値の更新
 
 前フレームの露出値と目標露出値の間を線形補間します。明るい場所への順応と暗い場所への順応で異なるスピードを使用します。
 
@@ -201,7 +214,7 @@ float speed = (target_exposure > current_exposure) ? speed_to_light : speed_to_d
 float new_exposure = lerp(current_exposure, target_exposure, 1.0f - exp(-speed * delta_time));
 ```
 
-### 3. 露出適用
+#### 露出適用
 
 計算された露出値をHDR画像に適用します。
 
@@ -210,21 +223,23 @@ float new_exposure = lerp(current_exposure, target_exposure, 1.0f - exp(-speed *
 float3 adapted_color = hdr_color.rgb * exposure;
 ```
 
-## 実装のポイント
-
-### 1. 1x1テクスチャによる露出値の保持
+### 1×1 テクスチャによる露出値の保持
 
 露出値を1x1のテクスチャ（R32_FLOAT）に保持し、フレーム間で更新します。これにより、前フレームの露出値を参照してスムーズな遷移を実現できます。
 
-### 2. 異なる順応スピード
+### 異なる順応スピード
 
 明るい場所への順応（`speed_to_light`）と暗い場所への順応（`speed_to_dark`）で異なるスピードを使用します。実際の目の順応では、暗い場所から明るい場所への順応の方が速いため、これを再現します。
 
-### 3. 露出値のクランプ
+### 露出値のクランプ
 
 露出値を最小値（0.05）と最大値（10.0）でクランプすることで、極端な露出を防ぎます。
 
-## 注意点
+## 制約・検証
+
+<Aside type="caution">
+  輝度計算は計算コストが高いため、Mipmapを使用して効率的に計算する必要があります。最上位のミップマップレベルを使用することで、1ピクセルのサンプリングでシーン全体の平均輝度を取得できます。
+</Aside>
 
 <Aside type="note">
   Adaptationはポストプロセス前提設計であり、Fullscreen Quad を使用してフルスクリーン描画を行います。
@@ -234,8 +249,10 @@ float3 adapted_color = hdr_color.rgb * exposure;
   AdaptationはTone Mappingの前に適用することを想定しています。Adaptationで露出調整済みのHDRバッファをTone Mappingに入力します。
 </Aside>
 
-<Aside type="caution">
-  輝度計算は計算コストが高いため、Mipmapを使用して効率的に計算する必要があります。最上位のミップマップレベルを使用することで、1ピクセルのサンプリングでシーン全体の平均輝度を取得できます。
-</Aside>
+## ソースコード
+
+- [adaptation.cpp — 実装を読む](https://github.com/rumo-dev/AtmosFiore/blob/master/Project/source/Game/Effect/adaptation/adaptation.cpp)
+
+公開版と開発中のローカル版では、更新時点が異なる場合があります。
 
 <PageEnd />

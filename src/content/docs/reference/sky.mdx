@@ -1,5 +1,6 @@
 ---
-title: "技術解説：Sky（大気散乱・プロシージャルスカイ）"
+lastUpdated: 2026-10-28
+title: "技術解説：Sky（空の描画）"
 description: レイマーチングによる大気散乱シミュレーションと、雲・星・オーロラをプロシージャルに合成するスカイレンダリング。
 sidebar:
   label: "Sky"
@@ -7,28 +8,44 @@ sidebar:
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import ModalVideo from "../../../components/ModalVideo.astro";
 import TopicSummary from "../../../components/TopicSummary.astro";
 import PageEnd from "../../../components/PageEnd.astro";
 
 <TopicSummary />
 
+## 概要
+
 窓の外に広がる空を描くため、AtmosFioreでは **Sky** をポストエフェクトとして実装しています。テクスチャに頼らず、レイリー散乱・ミー散乱に基づく大気散乱シミュレーション、FBMノイズによる雲、そしてプロシージャルな星・オーロラをすべてシェーダー内でリアルタイム生成します。
 
-## Skyの基本概念
+## 処理フロー図
 
-<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+```mermaid
+flowchart LR
+  A["深度から背景ピクセルを判定"]
+  A --> B["逆行列からカメラレイを再構築"]
+  B --> C["散乱光をレイマーチングで積分"]
+  C --> D["雲・星・オーロラを合成"]
+```
 
-深度バッファを参照して「背景（空）とみなせるピクセルのみ」にレイマーチングベースの大気散乱計算を適用し、シーンのジオメトリと自然に合成します。
+## 設計判断・処理の流れ
 
-### 処理フロー
+空を画面の背景として合成し、大気散乱と手続き的な要素を組み合わせます。
+
+### 処理の流れ
 
 1. **深度判定**：ジオメトリが存在するピクセルはスキップし、シーンカラーをそのまま返す
 2. **カメラレイの再構築**：逆射影行列・逆ビュー行列からワールド空間のレイ方向を算出
 3. **大気散乱の積分**：レイリー散乱・ミー散乱をステップごとに積分（`scatter()`）
 4. **雲・星・オーロラの合成**：FBMノイズによる雲、プロシージャルな星、オーロラエフェクトを加算
 
-## C++実装
+## 実装のポイント
+
+### 基本的な考え方
+
+深度バッファを参照して「背景（空）とみなせるピクセルのみ」にレイマーチングベースの大気散乱計算を適用し、シーンのジオメトリと自然に合成します。
+
+
+### C++ の実装
 
 ```cpp
 class Sky
@@ -76,9 +93,9 @@ void Sky::make(ID3D11DeviceContext* immediate_context, ID3D11ShaderResourceView*
 }
 ```
 
-## HLSL実装
+### HLSL の実装
 
-### 深度判定によるスキップ
+#### 深度判定によるスキップ
 
 ```hlsl
 Texture2D tex   : register(t0); // シーンカラー
@@ -100,7 +117,7 @@ float4 main(VS_OUT pin) : SV_Target
 }
 ```
 
-### カメラレイの再構築
+#### カメラレイの再構築
 
 ```hlsl
 // UVをNDC（正規化デバイス座標系）に変換
@@ -116,7 +133,7 @@ viewPos.xyz /= viewPos.w;
 float3 rayDir = normalize(mul(viewPos.xyz, (float3x3) inv_view));
 ```
 
-### レイリー・ミー散乱の積分
+#### レイリー・ミー散乱の積分
 
 ```hlsl
 static const float3 bM = float3(21e-6, 21e-6, 21e-6);       // ミー散乱係数
@@ -149,7 +166,7 @@ void scatter(float3 o, float3 d, out float3 col, out float3 scat, float t, float
 }
 ```
 
-### 雲・星の生成（テクスチャ不要のプロシージャルノイズ）
+#### 雲・星の生成（テクスチャ不要のプロシージャルノイズ）
 
 ```hlsl
 // 3Dノイズ（テクスチャ不要版）
@@ -178,13 +195,13 @@ float fnoise(float3 p, float t)
 }
 ```
 
-## 処理の詳細
+### 処理の詳細
 
-### 1. 物理ベース大気散乱モデル
+#### 物理ベース大気散乱モデル
 
 レイリー散乱（波長依存、短波長=青がより強く散乱）とミー散乱（波長非依存、大気中の塵やエアロゾルによる前方散乱）を、大気を球殻としてモデル化した上でレイマーチングにより積分します。これにより、太陽高度に応じた朝焼け・昼・夕焼けの自然な色変化が得られます。
 
-### 2. 高度ベースの雲密度計算
+#### 高度ベースの雲密度計算
 
 ```hlsl
 void densities(float3 pos, out float rayleigh, out float mie)
@@ -202,7 +219,7 @@ void densities(float3 pos, out float rayleigh, out float mie)
 
 指定した高度帯（`mincloudheight` 〜 `maxcloudheight`）でのみFBMノイズによる雲密度を加算し、それ以外の高度ではミー散乱のみが支配的になります。
 
-### 3. 地平線下でのオーロラ・星の切り替え
+#### 地平線下でのオーロラ・星の切り替え
 
 ```hlsl
 if (D.y < -ts)
@@ -218,13 +235,11 @@ else
 }
 ```
 
-## 実装のポイント
-
-### 1. テクスチャレスなプロシージャル生成
+### テクスチャレスなプロシージャル生成
 
 星・雲・オーロラのいずれもテクスチャアセットを使わず、`hash31()` / `hash33()` によるハッシュベースノイズと `_Noise()` / `fnoise()` によるFBMのみで生成しています。これによりアセット容量を増やさずに動的な空を表現できます。
 
-### 2. Reversed-Z対応の深度判定
+### Reversed-Z対応の深度判定
 
 ```hlsl
 bool isForeground = isReversed
@@ -234,7 +249,7 @@ bool isForeground = isReversed
 
 エンジンがReversed-Z深度バッファを使用している場合と通常のZバッファの場合の両方に対応し、深度値のどちらが「完全な背景」を示すかを条件分岐で吸収しています。
 
-### 3. 太陽方向とディレクショナルライトの連動
+### 太陽方向とディレクショナルライトの連動
 
 `Ds = normalize(-directional_light_direction)` により、シーン内のディレクショナルライト（太陽光）の方向をそのまま大気散乱の光源方向として利用し、時間帯によるライティング変化と空の見た目を同期させています。
 
@@ -242,8 +257,16 @@ bool isForeground = isReversed
   Skyはパイプラインの最初のポストエフェクトとして、Deferred Lightingの直後・フォグ系エフェクトの直前に配置されます。
 </Aside>
 
+## 制約・検証
+
 <Aside type="caution">
   レイマーチングのステップ数（`steps` / `stepss` = 16）を増やすとより滑らかな散乱表現になりますが、GPU負荷が線形に増加するため注意が必要です。
 </Aside>
+
+## ソースコード
+
+- [sky_ps.hlsl — 実装を読む](https://github.com/rumo-dev/AtmosFiore/blob/master/Project/source/Engine/Graphics/Shader/sky_ps.hlsl)
+
+公開版と開発中のローカル版では、更新時点が異なる場合があります。
 
 <PageEnd />

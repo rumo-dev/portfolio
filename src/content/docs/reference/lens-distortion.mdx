@@ -1,4 +1,5 @@
 ---
+lastUpdated: 2026-10-28
 title: "技術解説：Lens Distortion（レンズ歪曲）"
 description: ブラウン–コンラディモデルのk1項による樽型・糸巻き型歪みを再現する、FoV連動のレンズ歪曲ポストエフェクト。
 sidebar:
@@ -7,26 +8,28 @@ sidebar:
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import ImgComparison from "../../../components/ImgComparison.astro";
-import dummyImg from "../../../assets/dummy00.png";
-import houstonImg from "../../../assets/dummy01.png";
+import FeatureMedia from "../../../components/FeatureMedia.astro";
 import TopicSummary from "../../../components/TopicSummary.astro";
 import PageEnd from "../../../components/PageEnd.astro";
 
 <TopicSummary />
 
+## 概要
+
 広角レンズ特有の樽型（barrel）歪みや、望遠レンズの糸巻き型（pincushion）歪みを再現するため、AtmosFioreでは **Lens Distortion** を実装しています。カメラ較正で広く使われる **ブラウン–コンラディモデル** の主歪曲係数（k1）を用い、視野角（FoV）と連動して自動的に歪み量を調整します。
 
-## Lens Distortionの基本概念
+## 効果比較スライダー
 
-レンズ歪曲の有無をスライダーで比較できます。
+<FeatureMedia title="画面端のレンズ歪曲" beforeImage="/media/atmosfiore/captures/distortion_off.png" afterImage="/media/atmosfiore/captures/distortion_on.png" beforeLabel="歪曲 OFF" afterLabel="歪曲 ON" caption="AtmosFioreで撮影した同一シーンの比較です。画面端の幾何変化を確認できます。" />
 
-<ImgComparison
-  leftImage={dummyImg.src}
-  rightImage={houstonImg.src}
-  altLeft="歪曲なし"
-  altRight="歪曲あり"
-/>
+## 設計判断・処理の流れ
+
+画面中心からの距離に応じてUVを変形する構成です。歪曲係数の指定と画角に応じた調整を扱います。
+
+## 実装のポイント
+
+### 基本的な考え方
+
 
 ブラウン–コンラディモデルでは、歪み後の半径 `r_d` を歪み前の半径 `r_u` の多項式として次のように表します。
 
@@ -37,7 +40,10 @@ r_d = r_u * (1 + k1 * r_u^2)
 - **k1 > 0** → 樽型（barrel）歪み：広角レンズに典型的
 - **k1 < 0** → 糸巻き型（pincushion）歪み：望遠レンズに典型的
 
-## C++実装
+### C++ の実装
+
+<details>
+<summary>C++ のコードを開く</summary>
 
 ```cpp
 /**
@@ -86,7 +92,12 @@ private:
 };
 ```
 
-## HLSL実装
+</details>
+
+### HLSL の実装
+
+<details>
+<summary>HLSL のコードを開く</summary>
 
 ```hlsl
 // lens_distortion_ps.hlsl
@@ -146,27 +157,27 @@ float4 main(VS_OUT pin) : SV_TARGET
 }
 ```
 
-## 処理の詳細
+</details>
 
-### 1. FoVからのk1自動導出
+### 処理の詳細
+
+#### FoVからのk1自動導出
 
 `k1_from_fov()` は、45°を基準として実際の水平画角がそれより広ければ樽型（k1が正）、狭ければ糸巻き型（k1が負）に近づくよう線形近似しています。広角レンズを使うほど自動的に強い樽型歪みが得られるため、カメラの画角を変えるだけで違和感のない歪みが自動追従します。
 
-### 2. 中心からの正規化座標系での計算
+#### 中心からの正規化座標系での計算
 
 UV座標を `[0, 1]` から中心 `(0, 0)` 基準の座標系に変換してから歪み計算を行うことで、画面中心を基準とした対称な歪みを実現しています。
 
-### 3. 範囲外サンプリングの黒クランプ
+#### 範囲外サンプリングの黒クランプ
 
 樽型歪みでは画面端が内側に引き込まれ、逆に糸巻き型歪みでは範囲外を参照する箇所が生まれます。`LINEAR_BORDER_OPAQUE_BLACK` サンプラーを使うことで、範囲外は不透明な黒として扱われ、不自然な引き伸ばしを防いでいます。
 
-## 実装のポイント
-
-### 1. Physical Linkモードとアーティストモードの両立
+### Physical Linkモードとアーティストモードの両立
 
 `k1 == 0.0` をシェーダー内での「自動計算に切り替える」というシグナルとして利用することで、CPU側から明示的なk1を渡す（アーティスト指定）か、0を渡してFoV連動に任せるかをシームレスに切り替えられる設計になっています。
 
-### 2. Chromatic Aberration・Vignettingとの共通パイプライン位置
+### Chromatic Aberration・Vignettingとの共通パイプライン位置
 
 Lens Distortionはパイプライン上、Chromatic Aberrationの直後・Vignettingの直前に配置されます。これらはすべて「レンズそのものに起因する光学収差」として一括りにまとめられており、Bloomより前段で処理されます。
 
@@ -174,9 +185,17 @@ Lens Distortionはパイプライン上、Chromatic Aberrationの直後・Vignet
   出力はR16G16B16A16_FLOATの線形HDRです。歪みでサンプル範囲外となる画素は黒でクランプされます。
 </Aside>
 
+## 制約・検証
+
 <Aside type="caution">
   k1の絶対値が大きすぎると画面端の情報が大きく失われるため、通常は[-0.5,
   0.5]程度の範囲での調整を推奨します。
 </Aside>
+
+## ソースコード
+
+- [lens_distortion_ps.hlsl — 実装を読む](https://github.com/rumo-dev/AtmosFiore/blob/master/Project/source/Engine/Graphics/Shader/lens_distortion_ps.hlsl)
+
+公開版と開発中のローカル版では、更新時点が異なる場合があります。
 
 <PageEnd />

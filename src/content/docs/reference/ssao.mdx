@@ -1,0 +1,58 @@
+---
+lastUpdated: 2026-11-12
+title: "技術解説：SSAO（画面空間の遮蔽）"
+description: "G-Bufferを再利用し、半解像度の24サンプルAOと輪郭を保つフィルタを実装。"
+sidebar:
+  label: "SSAO"
+---
+
+import TopicSummary from "../../../components/TopicSummary.astro";
+import FeatureMedia from "../../../components/FeatureMedia.astro";
+import PageEnd from "../../../components/PageEnd.astro";
+
+<TopicSummary />
+
+## 概要
+
+家具と床、壁の隅に接地感を与えるため、直接光の影とは別に画面空間の遮蔽を導入しました。
+
+## 効果比較スライダー
+
+<FeatureMedia title="SSAO の遮蔽と合成" beforeImage="/media/atmosfiore/captures/ssao_off.png" afterImage="/media/atmosfiore/captures/ssao_on.png" beforeLabel="SSAO OFF" afterLabel="SSAO ON" caption="AtmosFioreで撮影したON / OFF画像です。差が小さいため、接触部の陰影を見る参考画像として掲載しています。" />
+
+## 設計判断・処理の流れ
+
+G-Bufferの位置・法線を再利用し、半解像度の計算結果を輪郭に配慮したフィルタで合成へつなぎます。
+
+```text
+G-Bufferの位置・法線 → 半解像度AO → 水平・垂直クロスバイラテラル → フル解像度へのアップサンプル → ライティング
+```
+
+## 実装のポイント
+
+各画素で円盤上の24点を参照します。カメラ空間の深度に合わせて探索半径をUVへ変換し、画素ごとの回転でサンプルパターンを分散します。半解像度の計算結果を位置情報でフィルタし、輪郭をまたぐにじみを抑える構成です。
+
+### 現行コードの抜粋
+
+```hlsl
+    const int sample_count = 24;
+    const float radius = max(ssao_radius, 1.0e-3f);
+
+    float3 position = mul(float4(center_position.xyz, 1.0f), view).xyz;
+    float3 normal = normalize(mul(float4(world_normal, 0.0f), view).xyz);
+    float rotation = hash_pixel(pin.position.xy) * 6.2831853f;
+    // Alchemy samples a disk parallel to the image plane. Project the
+    // world-space radius at this pixel's camera-space depth to UV units.
+```
+
+## 制約・検証
+
+画面外や裏側の形状による遮蔽は得られません。G-Buffer位置のアルファを背景判定にも使うため、AO値がほぼゼロの材質との区別は今後の検証点です。
+
+## ソースコード
+
+[ssao_ps.hlsl — 実装を読む](https://github.com/rumo-dev/AtmosFiore/blob/master/Project/source/Engine/Graphics/Shader/ssao_ps.hlsl)
+
+公開版と開発中のローカル版では、更新時点が異なる場合があります。
+
+<PageEnd />

@@ -1,0 +1,61 @@
+[
+  {
+    "camera_position": [
+      -9.0,
+      3.200000047683716,
+      1.0
+    ],
+    "camera_target": [
+      5.0,
+      2.5999999046325684,
+      -1.7999999523162842
+    ],
+    "capture_hresult": 0,
+    "dlss_available": true,
+    "dlss_enabled": true,
+    "enabled": true,
+    "error": "",
+    "geometry_fraction": 0.9761762152777778,
+    "id": "Indoor",
+    "image": "data/capture/indoor/Indoor_on.png",
+    "imgui": false,
+    "max_rgb": 255,
+    "mean_rgb": 124.31602478780863,
+    "min_rgb": 0,
+    "missing": false,
+    "mode": "all_features",
+    "pbr": false,
+    "title": "Indoor",
+    "visible_fraction": 0.9983617862654321
+  },
+  {
+    "camera_position": [
+      -9.0,
+      3.200000047683716,
+      1.0
+    ],
+    "camera_target": [
+      5.0,
+      2.5999999046325684,
+      -1.7999999523162842
+    ],
+    "capture_hresult": 0,
+    "dlss_available": true,
+    "dlss_enabled": false,
+    "enabled": false,
+    "error": "",
+    "geometry_fraction": 0.9761781442901235,
+    "id": "Indoor",
+    "image": "data/capture/indoor/Indoor_off.png",
+    "imgui": false,
+    "max_rgb": 255,
+    "mean_absolute_on_off_difference": 120.40625096450617,
+    "mean_rgb": 165.97662246013374,
+    "min_rgb": 0,
+    "missing": false,
+    "mode": "render_only",
+    "pbr": false,
+    "title": "Indoor",
+    "visible_fraction": 0.8244675925925926
+  }
+]

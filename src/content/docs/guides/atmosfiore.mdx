@@ -1,91 +1,103 @@
 ---
-title: "個人制作：AtmosFiore (Shader Demo)"
-description: 室内空間の空気感と光を支配する、DirectX 11 / C++ 自作カスタムシェーダープロジェクト。
+lastUpdated: 2026-11-11
+title: "作品紹介：AtmosFiore（個人制作）"
+description: "描画基盤から光・空気・カメラ表現までを設計した個人制作。設計判断と現在の実装を紹介します。"
 sidebar:
   order: 2
 ---
 
-import { LinkCard } from "@astrojs/starlight/components";
-import ModalVideo from "../../../components/ModalVideo.astro";
 import ProjectSummary from "../../../components/ProjectSummary.astro";
-import ProblemSolution from "../../../components/ProblemSolution.astro";
+import ModalVideo from "../../../components/ModalVideo.astro";
+import FeatureImage from "../../../components/FeatureImage.astro";
+import FeatureMedia from "../../../components/FeatureMedia.astro";
 import TopicIndex from "../../../components/TopicIndex.astro";
 import PageEnd from "../../../components/PageEnd.astro";
+import { topics } from "../../../data/topics";
 
-<ProjectSummary
-  kind="個人制作 / リアルタイム・グラフィックスデモ"
-  role="企画・エンジン設計・シェーダー実装のすべて"
-  period="2025年8月〜（継続開発中）"
-  team="1人（個人制作）"
-  stack={["C++", "DirectX 11", "HLSL", "自作エンジン"]}
-  metrics={[
-    { value: "21本", label: "公開中の技術解説（コード付き）" },
-    { value: "12種", label: "統括管理しているポストエフェクト" },
-    { value: "34種", label: "実行時に切り替えられるトーンマッピング" },
-    { value: "約64MB", label: "G-Buffer の消費量（1080p・1フレーム）を把握し最適化" },
-  ]}
-  highlights={[
-    "既存ゲームエンジンを使わず、DirectX 11 の描画基盤から自作",
-    "ディファードライティング・PBR・IBL・シャドウ・ポストプロセスを実装",
-    "各機能の実装を、コード付きの技術解説として公開",
-  ]}
-  links={[
-    { label: "GitHub（ソースコード）", href: "https://github.com/rumo-dev/AtmosFiore" },
-    { label: "技術解説の一覧", href: "../../reference/" },
-  ]}
+<ProjectSummary kind="個人制作 / リアルタイムグラフィックス" role="描画基盤・エンジン設計・C++ / HLSL実装" period="2025年8月〜（継続開発中）" team="1人" stack={["C++", "DirectX 11", "HLSL", "ImGui", "Tracy"]}
+ metrics={[
+ { value: topics.length + "本", label: "機能別の技術解説" },
+ { value: "2方式", label: "静的Voxel GIと時間更新DDGI" },
+ { value: "7系統", label: "技術解説のカテゴリ" }
+ ]}
+ highlights={[
+ "材質用G-Bufferと速度を分け、時間方向の処理を追加",
+ "LTC面光源・Froxelフォグ・FFS被写界深度を自作パイプラインへ統合",
+ "画面空間の各機能を、制約を含めて比較・検証できる構成"
+ ]}
+ links={[
+ { label: "ソースコード ↗", href: "https://github.com/rumo-dev/AtmosFiore" },
+ { label: "技術解説を選ぶ", href: "../../reference/" }
+ ]} />
+
+
+## 作品概要
+
+目標は、室内の光と空気感をリアルタイムで表現することです。既存ゲームエンジンを介さず、DirectX 11のリソース管理から照明、画面空間の表現、カメラの後処理までを組み立てています。
+
+描画結果だけでなく、「どの情報を保持し、どの順序で処理するか」を説明できる基盤づくりに取り組んでいます。外部モデルやライブラリを利用しつつ、自分で担当したエンジンとシェーダーの設計を以下の記事で紹介します。
+
+## 担当範囲
+
+描画基盤、エンジン設計、C++ / HLSL の実装を担当しています。外部モデルやライブラリを利用しながら、描画パイプラインとシェーダーを制作しています。
+
+## 実機の描画画面
+
+<FeatureImage
+ title="Indoor シーン"
+ src="/media/atmosfiore/captures/Indoor_on.png"
+ alt="AtmosFiore の Indoor シーン。書棚や机に囲まれた室内で、中央モデルと光源をリアルタイム描画した実行画面。"
+ caption="AtmosFioreの最新キャプチャです。室内シーン全体の描画結果を紹介しています。"
 />
 
 ## デモ動画
 
 <ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore" />
 
-## 作品概要
+公開済みの映像は旧版です。新しい実装解説版・技術ストーリー版は編集プロジェクトと素材を準備済みで、YouTube公開前です。
 
-DirectX 11 ベースの自作グラフィックスエンジンおよびカスタムシェーダーデモです。
-既存ゲームエンジンを介さず、DirectX 11 のローレベル描画からフォトリアルな空気感を描き切ることを目標にしています。
+## 実装更新
 
-主な実装機能は、物理ベースレンダリング（PBR）、ディファードライティング、各種光源（点・スポット・平行・面光源）、シャドウマッピング、IBL、大気散乱スカイ、フォグ、およびポストプロセス（Bloom / トーンマッピング / 自動露出 / 被写界深度 / 色収差 / レンズ歪曲 / ビネット）です。
+間接光の検証用に、静的なVoxel GIと、そのボリュームを入力にするDDGIを追加しました。DDGIは更新したプローブ結果を照明へ反映し、フォグの散乱光にも利用します。
 
-## まず見てほしい技術解説
+また、実演時に必要な項目へすぐアクセスできるプレゼンテーションモードを追加しました。描画エフェクトの有効状態を一か所で切り替え、ONの効果だけ設定タブに表示します。シーンの比較用トグルも通常のデバッグ操作から分離しています。
 
-実装の深さが分かりやすい4本です。
+<FeatureMedia title="Voxel GIによる拡散間接光" beforeImage="/media/atmosfiore/captures/voxel_off.png" afterImage="/media/atmosfiore/captures/voxel_on.png" beforeLabel="Voxel GI OFF" afterLabel="Voxel GI ON" caption="Voxel GI Emissionテストシーンの撮影画像です。固定画像での比較であり、性能測定ではありません。" />
 
-<TopicIndex featuredOnly />
+## 技術的な工夫
 
-## 技術的なこだわり
+| 見ていただきたい点 | 実装と設計判断 | 詳細 |
+| --- | --- | --- |
+| 情報とメモリの設計 | 材質4RT・深度・速度を区別し容量を内訳から算出 | [G-Buffer](../../reference/gbuffer/) |
+| アルゴリズムの統合 | 64×64のLTC LUTで面光源の反射を近似 | [Area Light](../../reference/area-light/) |
+| GPU上の処理構成 | Scatterと累積和で可変半径のボケを構築 | [Depth of Field](../../reference/dof/) |
+| 間接光の段階検証 | Voxel radianceからプローブ照明へ接続 | [Voxel GI](../../reference/voxel-gi/)、[DDGI](../../reference/ddgi/) |
+| 実演のしやすさ | 表示項目を絞り、効果と設定を分離 | [開発支援ツール](../../reference/debug-tools/) |
 
-### 映画の1コマのような空気感を演出するポストプロセス
+### 時間方向の安定性を優先する
 
-HDR レンダリングされた高輝度カラーを適切に画面へ表示するトーンマッピング（ACES Filmic Tone Mapping）と、自動露出（Adaptation）を実装。さらに Bloom で高輝度部分の発光表現を加え、建築雑誌のグラビアやシネマライクな絵作りを実現しました。
+TAAには速度による履歴の再投影、5点近傍によるクランプ、移動量による履歴重みの低減を実装しています。一方、投影ジッターを速度で十分相殺できていないため、現状はジッターをゼロにしています。完成形と現在の実装範囲を区別し、残像や細い輪郭を確認しながら改善する方針です。
 
-- 詳細: [トーンマッピングの実装詳細](../../reference/tone-mapping/)
-- 詳細: [Bloom の実装詳細](../../reference/bloom/)
-- 詳細: [自動露出（Adaptation）の実装詳細](../../reference/adaptation/)
+[TAAの現在の実装と制約](../../reference/taa/)
 
-## 直面した課題と解決策
+### 解像度の変更を一連のリソース管理として扱う
 
-### ディファードライティングの G-Buffer が消費するメモリと帯域
+DLSS導入に伴い、G-BufferだけでなくSSAO・SSR・SSGIと履歴バッファも内部解像度に合わせて再生成します。NGXの呼び出しに加え、解像度と履歴の整合性を管理することが実装上の要点です。
 
-<ProblemSolution
-  problem="4つのレンダーターゲット（G-Buffer）を使うディファードライティングで、1920×1080 のとき1フレームあたり約64MBを消費し、GPU の帯域幅に負荷がかかっていました。G-Buffer の読み取りがピクセルシェーダーの負荷も増やしていました。"
-  steps={[
-    "<strong>G-Buffer のレイアウトを最適化。</strong>法線（R16G16B16A16_FLOAT）、アルベド+金属度（R8G8B8A8_UNORM）、位置+AO（R16G16B16A16_FLOAT）、エミッシブ（R16G16B16A16_FLOAT）の4枚に、必要な情報を最小限のフォーマットで格納。",
-    "<strong>位置情報の深度バッファからの再構築を検討中。</strong>現在は位置を直接格納していますが、再構築すれば G-Buffer を1枚削減できる見込みです。",
-  ]}
-/>
+[DLSSと描画解像度の管理](../../reference/dlss/)
 
-詳しくは [G-Buffer の技術解説](../../reference/gbuffer/) をご覧ください。
+### 観察できる仕組みを整える
 
-## 技術解説の全体マップ
+中間バッファのプレビュー、TracyのCPU/GPU区間、リソースモニターを使い、最終画像だけでは分からない問題を切り分けます。性能改善率は計測条件とログを揃えてから提示する方針です。
+
+[開発支援ツール](../../reference/debug-tools/)
+
+## 制約・今後の改善
+
+画面空間手法は画面外の情報を扱えず、TAAは投影ジッターを無効化しています。比較素材は機能ごとのテストシーンで撮影しています。画像差分は見た目の参考であり、性能改善率を示すものではありません。動きが重要な機能は公開待ち動画として別に管理しています。
+
+## 関連資料
 
 <TopicIndex />
-
-## ソースコード
-
-<LinkCard
-  title="GitHub - AtmosFiore"
-  description="DirectX 11 / C++ エンジンのソースコードおよび HLSL シェーダーコードを公開しています。"
-  href="https://github.com/rumo-dev/AtmosFiore"
-/>
 
 <PageEnd />

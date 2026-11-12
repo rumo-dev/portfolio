@@ -1,0 +1,50 @@
+---
+lastUpdated: 2026-11-12
+title: "技術解説：DDGI（動的ディフューズGI）"
+description: "Voxel GIを参照するプローブ格子を時間更新し、間接光とフォグ散乱へ接続する実装。"
+sidebar:
+  label: "DDGI"
+---
+
+import TopicSummary from "../../../components/TopicSummary.astro";
+import FeatureMedia from "../../../components/FeatureMedia.astro";
+import PageEnd from "../../../components/PageEnd.astro";
+
+<TopicSummary />
+
+## 概要
+
+静的Voxel GIを土台に、プローブ格子を時間更新するDDGIを追加しました。D3D11のコンピュートシェーダーでVoxel radianceをサンプリングし、照明計算とボリュームフォグへ間接光を渡します。ハードウェアレイトレーシングは使用しません。
+
+## 効果比較スライダー
+
+<FeatureMedia title="プローブによる間接照明" beforeImage="/media/atmosfiore/captures/ddgi_off.png" afterImage="/media/atmosfiore/captures/ddgi_on.png" beforeLabel="DDGI OFF" afterLabel="DDGI ON" caption="プローブの影響範囲を含むテストシーンの撮影画像です。シアンの枠線はデバッグ表示で、製品画面の演出ではありません。" />
+
+## 設計判断・処理の流れ
+
+初期値12×8×12のプローブ格子を静的ボクセルボリューム内に置きます。各軸2〜12の範囲で設定でき、1フレームで全プローブを更新せず、1/8ずつ時間方向に分散します。更新結果は履歴として保持し、フィルタ済みの照明を描画側で補間します。
+
+```text
+Voxel GIの radiance / albedo / normal
+  → プローブ更新（方向サンプル・距離モーメント）
+  → 遮蔽を考慮した空間フィルタ
+  → 受光点で補間しVoxel GIとブレンド
+  → Deferred Lighting と Volumetric Fog
+```
+
+## 実装のポイント
+
+各更新プローブは64方向をVoxel GIへ追跡し、6方向の拡散照度ローブとヒット距離モーメントを記録します。更新方向をフレームごとに回転し、ヒステリシスで履歴を統合します。近傍プローブのフィルタでは、間のボクセル経路が遮られていないことを確認します。
+
+ヒット位置の材質アルベド・法線に対して現在の平行光、点光源、スポット光を評価します。面光源は中心とサイズによる近似で扱います。Fogの注入パスにもフィルタ済みプローブを渡し、直接光の散乱に加えて間接散乱を加えます。
+
+## 制約・検証
+
+移動するジオメトリはボクセル化しません。光源からボクセル面へのシャドウはプローブ更新で評価していません。また、6ローブ表現は完全な球面分布より低解像度です。Voxel GIを再ベイクすると履歴をリセットし、格子を再充填します。Fog比較シーンではDDGIの散乱寄与だけを切り替えます。
+
+## ソースコード
+
+- [DDGI.cpp — プローブ更新と照明参照](https://github.com/rumo-dev/AtmosFiore/blob/master/Project/source/Game/Effect/DDGI/DDGI.cpp)
+- [DDGI README — 更新方式と制約](https://github.com/rumo-dev/AtmosFiore/blob/master/Project/source/Game/Effect/DDGI/README.md)
+
+<PageEnd />

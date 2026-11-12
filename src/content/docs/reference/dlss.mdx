@@ -1,0 +1,64 @@
+---
+lastUpdated: 2026-10-28
+title: "技術解説：DLSS（超解像）"
+description: "NGX経由のDLSS接続と、内部描画解像度に追従するリソース管理。"
+sidebar:
+  label: "DLSS"
+---
+
+import TopicSummary from "../../../components/TopicSummary.astro";
+import PageEnd from "../../../components/PageEnd.astro";
+
+<TopicSummary />
+
+## 概要
+
+画質と描画負荷を調整できるよう、DLSSの呼び出しだけでなく内部解像度の変更を描画基盤へ組み込みました。
+
+## 処理フロー図
+
+```mermaid
+flowchart LR
+  A["カラー・深度・速度を用意"]
+  A --> B["利用可能なNGX機能を確認"]
+  B --> C["選択したDLSSモードで評価"]
+  C --> D["出力解像度の画像を取得"]
+```
+
+## 設計判断・処理の流れ
+
+NGXの呼び出しと描画側のリソース管理を分け、内部解像度が変わった場合も入力と履歴の整合性を保ちます。
+
+```text
+内部解像度のジオメトリ・照明 → カラー・深度・速度 → NGX評価 → 出力解像度の画像
+```
+
+## 実装のポイント
+
+DLSSManagerが初期化、機能生成、モード変更、リソース解放を担当します。Ultra Performance、Performance、Balanced、Quality、DLAAのモードを定義しています。内部解像度の変更時はG-Buffer、SSAO、SSR、SSGI、TAA履歴などを再生成します。
+
+### 現行コードの抜粋
+
+```cpp
+  bool IsAvailable() const { return m_initialized && m_feature != nullptr && m_reason.empty(); }
+  const std::string& GetUnavailableReason() const { return m_reason; }
+  bool IsEnabled() const { return m_enabled; }
+  void SetEnabled(bool enabled);
+  Mode GetMode() const { return m_mode; }
+  void SetMode(Mode mode);
+  float GetSharpness() const { return m_sharpness; }
+  void SetSharpness(float sharpness);
+
+```
+
+## 制約・検証
+
+実行環境とNGXの利用可否に依存します。IsAvailableと失敗理由を公開し、使えない状況を判別できる設計です。モードごとの実測FPSや画質比較は未掲載で、すべての環境での動作を保証するものではありません。
+
+## ソースコード
+
+[dlss_manager.cpp — 実装を読む](https://github.com/rumo-dev/AtmosFiore/blob/master/Project/source/Engine/Graphics/DLSS/dlss_manager.cpp)
+
+公開版と開発中のローカル版では、更新時点が異なる場合があります。
+
+<PageEnd />

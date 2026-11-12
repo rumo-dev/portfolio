@@ -1,99 +1,18 @@
 ---
-// Props
-interface Props {
-  leftImage: string;
-  rightImage: string;
-  altLeft?: string;
-  altRight?: string;
-  className?: string;
-}
-
-const {
-  leftImage,
-  rightImage,
-  altLeft = "Before",
-  altRight = "After",
-  className = "",
-} = Astro.props;
-// 仮画像（dummy*）はそのまま公開しない。実画像に差し替えるまでは「準備中」表示にする
-const isPlaceholder = /dummy/i.test(leftImage) || /dummy/i.test(rightImage);
+interface Props { leftImage: string; rightImage: string; altLeft?: string; altRight?: string; className?: string; }
+const { leftImage, rightImage, altLeft = '適用前', altRight = '適用後', className = '' } = Astro.props;
+const placeholder = /dummy|placeholder/i.test(leftImage + rightImage);
+const base = import.meta.env.BASE_URL.replace(/\/$/, "") + "/";
 ---
-
-{
-  isPlaceholder ? (
-    <div class="img-pending not-content" role="note">
-      <strong>比較画像は準備中です</strong>
-      <span>実装コードと解説は下記をご覧ください。</span>
-    </div>
-  ) : (
-<img-comparison-slider class={`comparison-slider ${className}`}>
-  <img slot="first" src={leftImage} alt={altLeft} />
-  <img slot="second" src={rightImage} alt={altRight} />
+<div class={'comparison ' + className}>
+<img-comparison-slider tabindex="0" aria-label={altLeft + 'と' + altRight + 'の比較。左右矢印キーで操作できます。'}>
+<img slot="first" src={placeholder ? base + 'media/placeholder-before.svg' : leftImage} alt={altLeft} loading="lazy" />
+<img slot="second" src={placeholder ? base + 'media/placeholder-after.svg' : rightImage} alt={altRight} loading="lazy" />
 </img-comparison-slider>
-  )
-}
-
-<script>
-  import "img-comparison-slider";
-</script>
-
-<style is:global>
-.img-pending {
-  margin: 1.2rem 0;
-  padding: 0.9rem 1.1rem;
-  border: 1px dashed var(--sl-color-hairline-light);
-  border-radius: 10px;
-  background: var(--sl-color-bg-card);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.2rem 0.8rem;
-  align-items: baseline;
-  font-size: 0.9rem;
-  color: var(--sl-color-text-muted);
-}
-.img-pending strong { color: var(--sl-color-text); }
-</style>
+<div class="labels"><span>{altLeft}</span><span>{altRight}</span></div>
+{placeholder && <p class="note">DUMMY IMAGE — 比較操作用の仮画像です。実機の描画結果ではありません。</p>}
+</div>
+<script>import 'img-comparison-slider';</script>
 <style>
-.comparison-slider {
-  display: block;
-
-  width: 100%;
-
-  max-width: none;
-
-  overflow: hidden;
-
-  border-radius: 12px;
-
-  margin: 1.5rem 0;
-}
-
-/* ← ここが重要 */
-.comparison-slider img {
-  display: block;
-
-  /* width指定しない */
-  max-width: 100%;
-
-  height: auto;
-
-  margin: 0;
-
-  padding: 0;
-
-  border: 0;
-}
-
-/* ← ShadowDOMのズレ補正 */
-img-comparison-slider::part(first) {
-  top: 0;
-}
-
-img-comparison-slider::part(second) {
-  top: 0;
-}
-
-img-comparison-slider::part(container) {
-  line-height: 0;
-}
+.comparison { margin: 1.5rem 0; } img-comparison-slider { display:block; width:100%; overflow:hidden; border-radius:12px; --divider-color:#f59e0b; --divider-width:2px; } img-comparison-slider:focus-visible { outline:3px solid var(--sl-color-accent); outline-offset:4px; } img { display:block; width:100%; height:auto; margin:0; } .labels { display:flex; justify-content:space-between; gap:1rem; font-size:.8rem; margin-top:.5rem; } .note { font-size:.75rem; color:var(--sl-color-text-muted); }
 </style>

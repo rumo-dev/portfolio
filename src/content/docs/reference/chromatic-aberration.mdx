@@ -1,4 +1,5 @@
 ---
+lastUpdated: 2026-10-28
 title: "技術解説：Chromatic Aberration（色収差）"
 description: 波長ごとの屈折率の違いによるRGBチャンネルのズレを再現する、物理ベース連動の色収差ポストエフェクト。
 sidebar:
@@ -7,36 +8,41 @@ sidebar:
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import ImgComparison from "../../../components/ImgComparison.astro";
-import dummyImg from "../../../assets/dummy00.png";
-import houstonImg from "../../../assets/dummy01.png";
+import FeatureMedia from "../../../components/FeatureMedia.astro";
 import TopicSummary from "../../../components/TopicSummary.astro";
 import PageEnd from "../../../components/PageEnd.astro";
 
 <TopicSummary />
 
+## 概要
+
 現実のレンズでは波長によって屈折率が異なるため、RGBチャンネルが画面端に向かって放射状にズレる「横方向色収差」が発生します。AtmosFioreの **Chromatic Aberration** は、この現象をカメラの焦点距離・F値と連動させて物理的にもっともらしく再現します。
 
-## Chromatic Aberrationの基本概念
+## 効果比較スライダー
 
-色収差の有無をスライダーで比較できます。
+<FeatureMedia title="画面周辺の色収差" beforeImage="/media/atmosfiore/captures/chromatic_off.png" afterImage="/media/atmosfiore/captures/chromatic_on.png" beforeLabel="色収差 OFF" afterLabel="色収差 ON" caption="AtmosFioreで撮影したON / OFF画像です。この撮影条件では差が小さいため、強度は動画・実機での確認が適しています。" />
 
-<ImgComparison
-  leftImage={dummyImg.src}
-  rightImage={houstonImg.src}
-  altLeft="色収差オフ"
-  altRight="色収差オン"
-/>
+## 設計判断・処理の流れ
+
+レンズの波長分散を、RGBごとのサンプリング位置の違いとして近似します。カメラのパラメータと調整用の強度を組み合わせます。
+
+## 実装のポイント
+
+### 基本的な考え方
+
 
 レンズの色収差は、広角（短焦点距離）ほど、また開放絞り（小さいF値）ほど強く現れる傾向があります。AtmosFioreはこの物理的傾向をシェーダー内で近似し、RGB各チャンネルのUVサンプリング位置を中心からの距離に応じてずらすことで色収差を表現します。
 
-### 物理ベース連動
+#### 物理ベース連動
 
 - **FocalLength**：広角（短焦点）ほど収差が大きい → `strength_from_focal_length()`
 - **FNumber**：開放絞りほど収差が大きい → `strength_from_fnumber()`
 - **intensity**：アーティストによる手動オフセット
 
-## C++実装
+### C++ の実装
+
+<details>
+<summary>C++ のコードを開く</summary>
 
 ```cpp
 /**
@@ -91,7 +97,9 @@ private:
 };
 ```
 
-### 物理ベース強度計算
+</details>
+
+#### 物理ベース強度計算
 
 ```cpp
 // 焦点距離 [mm] → 収差強度
@@ -133,7 +141,10 @@ void ChromaticAberration::make(ID3D11DeviceContext* immediate_context, ID3D11Sha
 }
 ```
 
-## HLSL実装
+### HLSL の実装
+
+<details>
+<summary>HLSL のコードを開く</summary>
 
 ```hlsl
 // chromatic_aberration_ps.hlsl
@@ -200,27 +211,27 @@ float4 main(VS_OUT pin) : SV_TARGET
 }
 ```
 
-## 処理の詳細
+</details>
 
-### 1. 半径の2乗による端集中
+### 処理の詳細
+
+#### 半径の2乗による端集中
 
 `radial = dist * dist` により、画面中心付近ではほぼ収差が発生せず、端に近づくにつれて急激にオフセット量が増加します。これは実際のレンズ収差が半径のべき乗に比例するという物理特性の簡易近似です。
 
-### 2. Rを外側・Bを内側にずらす非対称シフト
+#### Rを外側・Bを内側にずらす非対称シフト
 
 `shift_r` を正、`shift_b` を負に設定することで、赤チャンネルは外側に、青チャンネルは内側にサンプリング位置がずれ、Gチャンネルを基準とした典型的な色フチ（赤〜シアンの縁取り）を再現します。
 
-### 3. FocalLengthとFNumberの掛け合わせ
+#### FocalLengthとFNumberの掛け合わせ
 
 `phys_scale = focal_scale(FocalLength) * fnum_scale(FNumber)` により、広角かつ開放絞りという「収差が最も強く出る条件」が重なったときに最大の強度になるよう設計されています。
 
-## 実装のポイント
-
-### 1. CPU側とGPU側の役割分担
+### CPU側とGPU側の役割分担
 
 CPU側（C++）は `intensity` によるアーティストスケールのみを定数バッファに積み、実際の物理スケーリング（FocalLength / FNumberへの連動）はシェーダー内で完結させることで、シェーダーの単純さを保っています。
 
-### 2. Physical Linkによるモード切り替え
+### Physical Linkによるモード切り替え
 
 `physical_link` フラグ（GUI上の「Physical Link」チェックボックス）により、物理連動を有効にするか、`intensity` のみのシンプルなアーティスト制御にするかを切り替え可能です。
 
@@ -228,8 +239,16 @@ CPU側（C++）は `intensity` によるアーティストスケールのみを�
   出力はR16G16B16A16_FLOATの線形HDRです。Camera_Constants（b1）を参照するため、事前にカメラ定数バッファのバインドが必要です。
 </Aside>
 
+## 制約・検証
+
 <Aside type="caution">
   収差量が大きすぎるとエッジのちらつき（アーティファクト）が目立ちやすくなるため、`intensity`は[0..3]程度の範囲での調整を推奨します。
 </Aside>
+
+## ソースコード
+
+- [chromatic_aberration_ps.hlsl — 実装を読む](https://github.com/rumo-dev/AtmosFiore/blob/master/Project/source/Engine/Graphics/Shader/chromatic_aberration_ps.hlsl)
+
+公開版と開発中のローカル版では、更新時点が異なる場合があります。
 
 <PageEnd />

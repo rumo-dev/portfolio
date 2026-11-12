@@ -5,7 +5,8 @@
 // - featured: true のものは「まずここから」として一覧の先頭に表示されます。
 // ============================================================
 
-export type CategoryKey = "foundation" | "lighting" | "atmosphere" | "post" | "system";
+export type CategoryKey = "foundation" | "lighting" | "globalIllumination" | "screenSpace" | "atmosphere" | "post" | "system";
+export const categoryOrder: CategoryKey[] = ["foundation", "lighting", "globalIllumination", "screenSpace", "atmosphere", "post", "system"];
 
 export const categories: Record<CategoryKey, { label: string; lead: string }> = {
   foundation: {
@@ -13,20 +14,28 @@ export const categories: Record<CategoryKey, { label: string; lead: string }> = 
     lead: "ディファードレンダリングとマテリアルの土台。",
   },
   lighting: {
-    label: "ライティング・影",
-    lead: "光源の種類ごとの実装と、影・環境光。",
+    label: "光源・影・環境光",
+    lead: "光源の種類、影の生成、環境光の計算。",
+  },
+  globalIllumination: {
+    label: "間接光・GI",
+    lead: "Voxel radiance と動的プローブを組み合わせた間接照明。",
+  },
+  screenSpace: {
+    label: "画面空間・時間方向",
+    lead: "画面バッファや前フレームを使う描画効果。",
   },
   atmosphere: {
-    label: "大気・空間表現",
-    lead: "空とフォグで空間の奥行きを作る。",
+    label: "空・フォグ",
+    lead: "大気散乱やフォグで空間の奥行きを作る。",
   },
   post: {
-    label: "ポストプロセス",
-    lead: "HDR から最終画面までのカメラ・レンズ表現。",
+    label: "ポストプロセス・カメラ",
+    lead: "HDR から最終画面までの画づくりと管理。",
   },
   system: {
-    label: "その他システム",
-    lead: "描画以外のエンジン機能。",
+    label: "エンジン・開発支援",
+    lead: "カメラ、並列処理、音声、デバッグ機能。",
   },
 };
 
@@ -48,56 +57,219 @@ export interface Topic {
 }
 
 export const topics: Topic[] = [
+  {
+  "slug": "model-pipeline",
+  "category": "foundation",
+  "name": "glTF Model Pipeline",
+  "summary": "glTFモデルのノード・スキン・材質・アニメーションと描画パスの管理。",
+  "points": [
+    "Deferred・Forward・Shadowを区別",
+    "モデル更新のCPU処理を並列化と接続"
+  ],
+  "related": [
+    "gbuffer",
+    "post-effect-manager"
+  ]
+},
+  {
+  "slug": "camera-system",
+  "category": "system",
+  "name": "Camera System",
+  "summary": "共通インターフェースで視点を切り替え、撮影パラメータをポスト処理へ渡すカメラ管理。",
+  "points": [
+    "名前でカメラを登録・切替",
+    "未登録時はNullCameraへフォールバック"
+  ],
+  "related": [
+    "gbuffer",
+    "post-effect-manager"
+  ]
+},
+  {
+  "slug": "debug-tools",
+  "category": "system",
+  "name": "開発支援",
+  "summary": "中間バッファの可視化、Tracy計測区間、リソース監視を組み合わせた開発支援。",
+  "points": [
+    "G-Bufferや影の中間結果をプレビュー",
+    "CPU・メモリ・FPS履歴をGUIで表示"
+  ],
+  "featured": false,
+  "related": [
+    "gbuffer",
+    "post-effect-manager"
+  ]
+},
+  {
+  "slug": "job-system",
+  "category": "system",
+  "name": "Job System",
+  "summary": "再利用するワーカープールでモデルのアニメーション更新を分担。",
+  "points": [
+    "少量の仕事は逐次処理へ切り替え",
+    "GPU操作を描画スレッドに限定"
+  ],
+  "featured": false,
+  "related": [
+    "gbuffer",
+    "post-effect-manager"
+  ]
+},
+  {
+  "slug": "dlss",
+  "category": "foundation",
+  "name": "DLSS",
+  "summary": "NGX経由のDLSS接続と、内部描画解像度に追従するリソース管理。",
+  "points": [
+    "カラー・深度・モーションベクトルを入力",
+    "利用可否と失敗理由を保持"
+  ],
+  "featured": false,
+  "related": [
+    "gbuffer",
+    "post-effect-manager"
+  ]
+},
+  {
+  "slug": "taa",
+  "category": "screenSpace",
+  "name": "TAA",
+  "summary": "モーションベクトルによる再投影と、近傍クランプを用いた履歴合成。",
+  "points": [
+    "2枚の履歴バッファを交互に使用",
+    "投影ジッターを無効化してカメラ射影を安定化"
+  ],
+  "featured": false,
+  "related": [
+    "gbuffer",
+    "post-effect-manager"
+  ]
+},
+  {
+  "slug": "ssgi",
+  "category": "screenSpace",
+  "name": "SSGI",
+  "summary": "半解像度・8方向のサンプルで、画面内のカラーから拡散間接光を近似。",
+  "points": [
+    "受光面と送光面の法線で重み付け",
+    "間接光単体のデバッグ表示を用意"
+  ],
+  "featured": false,
+  "related": [
+    "gbuffer",
+    "post-effect-manager"
+  ]
+},
+  {
+  "slug": "ssr",
+  "category": "screenSpace",
+  "name": "SSR",
+  "summary": "投影した反射レイを深度と比較し、半解像度で画面内の映り込みを求める実装。",
+  "points": [
+    "透視補正した深度でレイを探索",
+    "粗さ・金属度で対象を限定し、画面端で減衰"
+  ],
+  "featured": false,
+  "related": [
+    "gbuffer",
+    "post-effect-manager"
+  ]
+},
+  {
+  "slug": "ssao",
+  "category": "screenSpace",
+  "name": "SSAO",
+  "summary": "G-Bufferを再利用し、半解像度の24サンプルAOと輪郭を保つフィルタを実装。",
+  "points": [
+    "画面内の位置・法線から遮蔽を推定",
+    "水平・垂直の13タップフィルタとアップサンプル"
+  ],
+  "featured": false,
+  "related": [
+    "gbuffer",
+    "post-effect-manager"
+  ]
+},
   // ---------- 描画基盤 ----------
   {
-    slug: "gbuffer",
-    category: "foundation",
-    name: "G-Buffer",
-    summary: "法線・アルベド・位置・エミッシブを4枚のレンダーターゲットに格納するディファード用バッファ。",
-    points: [
-      "1080p で1フレーム約64MBの消費を把握し、フォーマットを最小限に整理",
-      "DirectX 11 の SRV/RTV 同時バインド禁止に、Activate/Deactivate の対で対応",
-      "ビューポートとレンダーターゲットを退避・復元し、他パスへの影響を排除",
-    ],
-    featured: true,
-    related: ["deferred-lighting", "pbr", "post-effect-manager"],
-  },
+  "slug": "gbuffer",
+  "category": "foundation",
+  "name": "G-Buffer",
+  "summary": "材質用4RTに深度と独立したモーションベクトルを組み合わせる描画基盤。",
+  "points": [
+    "既存の材質レジスタ配置を維持",
+    "1080pの理論容量を内訳付きで整理"
+  ],
+  "featured": true,
+  "related": [
+    "deferred-lighting",
+    "taa",
+    "dlss"
+  ]
+},
   {
-    slug: "deferred-lighting",
-    category: "foundation",
-    name: "Deferred Lighting",
-    summary: "G-Buffer を読み出し、平行・点・スポット・面光源をすべて1パスで合成するライティングパス。",
-    points: [
-      "光源を StructuredBuffer で渡し、シェーダー内ループで可変光源数に対応",
-      "光源の種類ごとに専用のシャドウサンプリング関数を呼び分け",
-    ],
-    related: ["gbuffer", "point-light", "area-light"],
-  },
+  "slug": "deferred-lighting",
+  "category": "foundation",
+  "name": "Deferred Lighting",
+  "summary": "4種類の光源、IBL、材質AOとSSAOをフルスクリーンの照明パスで合成。",
+  "points": [
+    "材質情報をG-Bufferから共通参照",
+    "半透明は別のForwardパスへ分離"
+  ],
+  "related": [
+    "gbuffer",
+    "post-effect-manager"
+  ]
+},
   {
     slug: "pbr",
     category: "foundation",
     name: "Physical Material (PBR)",
-    summary: "Albedo・Metallic・Roughness で素材の質感を物理的に表現するマテリアル。",
+    summary: "glTF Metallic-Roughnessを基礎に、材質パラメータから反射を計算。",
     points: [
       "glTF の pbrMetallicRoughness ワークフローに準拠",
       "Metallic パラメータ1つで金属・非金属を滑らかに補間",
     ],
     basis: "glTF 2.0 Specification",
-    related: ["gbuffer", "ibl", "deferred-lighting"],
+    related: ["gltf-pbr", "gbuffer", "ibl", "deferred-lighting"],
   },
   {
-    slug: "post-effect-manager",
+    slug: "gltf-pbr",
     category: "foundation",
-    name: "Post Effect Manager",
-    summary: "12種類のポストエフェクトを1本のパイプラインとして統括する管理クラス。",
+    name: "glTF PBR材質",
+    summary: "標準材質とKHR_materials拡張を読み込み、Deferred / Forwardへ振り分け。",
     points: [
-      "各エフェクトは互いを参照せず、SRV の受け渡しだけを管理クラスが仲介（疎結合）",
-      "エフェクトの追加・削除・順序変更が draw() の数行の変更で済む",
-      "各エフェクトの中間バッファを ImGui でプレビューしながら調整できる",
+      "clearcoat・sheen・anisotropy・iridescenceに対応",
+      "transmission・volume・dispersionをForwardで近似",
     ],
-    featured: true,
-    related: ["tone-mapping", "bloom", "dof"],
+    related: ["pbr", "model-pipeline", "gbuffer"],
   },
+  {
+    slug: "culling",
+    category: "foundation",
+    name: "Model / Meshlet Culling",
+    summary: "視錐台と前フレームの遮蔽結果でモデル・メッシュレットの描画を省略。",
+    points: [
+      "モデルAABBと最大64頂点・126三角形のメッシュレットを判定",
+      "静的モデルを対象にクエリ予算付きの遮蔽カリングを実行",
+    ],
+    related: ["model-pipeline", "debug-tools", "shadow-mapping"],
+  },
+  {
+  "slug": "post-effect-manager",
+  "category": "post",
+  "name": "Post Effect Manager",
+  "summary": "13項目のエフェクト順序・有効状態と、画面空間処理を統括。",
+  "points": [
+    "順序・設定をGUIで編集しJSONへ保存",
+    "DLSS・TAAと描画解像度の状態を管理"
+  ],
+  "featured": false,
+  "related": [
+    "gbuffer",
+    "post-effect-manager"
+  ]
+},
 
   // ---------- ライティング・影 ----------
   {
@@ -135,19 +307,20 @@ export const topics: Topic[] = [
     related: ["point-light", "deferred-lighting"],
   },
   {
-    slug: "area-light",
-    category: "lighting",
-    name: "Area Light（LTC）",
-    summary: "窓やパネルライトのような面光源を、LTC で矩形・円形・球形に対応して正確に積分。",
-    points: [
-      "LUT テクスチャを使わない Textureless 近似で軽量に動作",
-      "Diffuse と Specular で変換行列を使い分け、ヤコビアン正規化でエネルギーを保存",
-      "Directional Light と露出スケールを統一し、光源間の明るさを揃える",
-    ],
-    basis: "Heitz et al., Linearly Transformed Cosines (2016)",
-    featured: true,
-    related: ["deferred-lighting", "directional-light", "pbr"],
-  },
+  "slug": "area-light",
+  "category": "lighting",
+  "name": "Area Light",
+  "summary": "64×64の行列・振幅LUTを参照して面光源のBRDF積分を近似。",
+  "points": [
+    "粗さと視線角からLUTを参照",
+    "矩形・ディスク・球形の形状を扱う"
+  ],
+  "featured": true,
+  "related": [
+    "gbuffer",
+    "post-effect-manager"
+  ]
+},
   {
     slug: "ibl",
     category: "lighting",
@@ -161,18 +334,41 @@ export const topics: Topic[] = [
     related: ["pbr", "sky"],
   },
   {
-    slug: "shadow-mapping",
-    category: "lighting",
-    name: "Shadow Mapping",
-    summary: "平行光は直交投影＋PCF、点光源は双放物面マッピング、さらにコンタクトシャドウを実装。",
+    slug: "voxel-gi",
+    category: "globalIllumination",
+    name: "Voxel GI",
+    summary: "静的シーンを32³〜256³のボクセルへ焼き込み、拡散間接光とDDGIの入力に利用。",
     points: [
-      "R24G8_TYPELESS で確保し、書き込み用 DSV と読み出し用 SRV を同一リソースから作成",
-      "光源の種類ごとに投影方式を変えて精度とコストを両立",
-      "現状は点光源1灯のみ影に対応（制約として明記）",
+      "32³〜256³から選べるボリュームへ材質・法線・発光を記録（初期値64³）",
+      "再ベイク可能な静的ボリュームをDDGIの入力にも利用",
     ],
-    featured: false,
-    related: ["directional-light", "point-light"],
+    related: ["ddgi", "ssgi", "ibl"],
   },
+  {
+    slug: "ddgi",
+    category: "globalIllumination",
+    name: "DDGI",
+    summary: "Voxel GIを参照してプローブ照明を時間更新し、間接光を補間。",
+    points: [
+      "プローブ格子の放射輝度を履歴とフィルタで安定化",
+      "シーン光源を注入し、ボリュームフォグの照明入力にも接続",
+    ],
+    related: ["voxel-gi", "fog", "ssgi"],
+  },
+  {
+  "slug": "shadow-mapping",
+  "category": "lighting",
+  "name": "Shadow Mapping",
+  "summary": "平行光の深度マップと、4×4アトラスに格納する複数点光源の双放物面シャドウ。",
+  "points": [
+    "前後2枚の点光源アトラス",
+    "継ぎ目・タイル境界・バイアスを調整"
+  ],
+  "related": [
+    "gbuffer",
+    "post-effect-manager"
+  ]
+},
 
   // ---------- 大気・空間表現 ----------
   {
@@ -187,31 +383,36 @@ export const topics: Topic[] = [
     related: ["fog", "directional-light", "ibl"],
   },
   {
-    slug: "fog",
-    category: "atmosphere",
-    name: "Fog System",
-    summary: "距離・指数・高さ・ボリュームの4方式を多段合成するフォグ。ボリュームは Froxel ベース。",
-    points: [
-      "共通インターフェース FogBase により、新しい方式を追加しても管理側は無変更",
-      "Froxel グリッドを 160×90×128 に抑え、品質と性能のバランスを確保",
-    ],
-    related: ["sky", "post-effect-manager"],
-  },
+  "slug": "fog",
+  "category": "atmosphere",
+  "name": "Fog System",
+  "summary": "距離・指数・高さフォグと、80×48×128のFroxelで計算するボリュームフォグ。",
+  "points": [
+    "4種類のフォグを個別に調整",
+    "光の注入と視線方向の累積を分離"
+  ],
+  "related": [
+    "gbuffer",
+    "post-effect-manager"
+  ]
+},
 
   // ---------- ポストプロセス ----------
   {
-    slug: "dof",
-    category: "post",
-    name: "Depth of Field",
-    summary: "AMD の Fast Filter Spreading を Compute Shader で実装した、散乱方式の被写界深度。",
-    points: [
-      "InterlockedAdd により、各ピクセルが周囲へ寄与を撒く「真の Scatter」を実現",
-      "フィルタサイズに対して O(1) のコストで大きなボケを表現",
-    ],
-    basis: "Hillesland & Skelton, Cinematic Depth of Field (AMD, GDC 2017)",
-    featured: true,
-    related: ["exposure", "bloom", "post-effect-manager"],
-  },
+  "slug": "dof",
+  "category": "post",
+  "name": "Depth of Field",
+  "summary": "CoCを使い、Scatter・累積和・Resolveでボケ画像を構築。",
+  "points": [
+    "単一デルタバッファに寄与を蓄積",
+    "焦点・ボケ範囲をデバッグ表示"
+  ],
+  "featured": false,
+  "related": [
+    "gbuffer",
+    "post-effect-manager"
+  ]
+},
   {
     slug: "exposure",
     category: "post",
@@ -255,7 +456,7 @@ export const topics: Topic[] = [
     points: [
       "全アルゴリズムを1つの .hlsli に集約し、再コンパイルなしで実行時に切り替え",
       "ACES Filmic を既定としつつ、用途に応じて比較できるように設計",
-      "パイプライン最終段に配置し、それ以前をすべて線形 HDR で処理",
+      "既定順ではHDR処理の後に配置。順序編集時は表示変換との整合性を確認",
     ],
     featured: true,
     related: ["adaptation", "exposure", "bloom"],

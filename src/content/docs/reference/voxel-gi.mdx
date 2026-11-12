@@ -1,0 +1,48 @@
+---
+lastUpdated: 2026-11-12
+title: "技術解説：Voxel GI（ボクセル間接光）"
+description: "静的なglTFシーンを32³〜256³のボリュームへベイクし、コーントレーシングで拡散間接光を求める実装。"
+sidebar:
+  label: "Voxel GI"
+---
+
+import TopicSummary from "../../../components/TopicSummary.astro";
+import FeatureMedia from "../../../components/FeatureMedia.astro";
+import PageEnd from "../../../components/PageEnd.astro";
+
+<TopicSummary />
+
+## 概要
+
+静的な室内モデルから放射輝度をボクセルへベイクし、間接光として再利用するVoxel GIを追加しました。これは動的な全シーンGIではなく、選択した静的モデルを明示的に再ベイクする方式です。
+
+## 効果比較スライダー
+
+<FeatureMedia title="発光パネルから広がる拡散間接光" beforeImage="/media/atmosfiore/captures/voxel_off.png" afterImage="/media/atmosfiore/captures/voxel_on.png" beforeLabel="Voxel GI OFF" afterLabel="Voxel GI ON" caption="Voxel GI Emissionテストシーンの撮影画像です。発光パネルの色が床・壁へ回り込む様子を比較できます。" />
+
+## 設計判断・処理の流れ
+
+対象モデルを一度ボクセル化し、通常の描画ではボリュームを参照します。再ベイクが必要な静的データと、毎フレーム変わるシーン光源を分けることで、ボクセルデータの役割を明確にしています。
+
+```text
+静的glTFモデル → 32³〜256³ボリュームへ材質・法線・放射輝度を記録（初期値64³）
+              → mip生成 → 画素ごとに5方向のコーントレース
+              → 拡散間接光としてDeferred Lightingへ加算
+```
+
+## 実装のポイント
+
+室内シーンの`Library`モデルを初回描画時に`R16G16B16A16_FLOAT`ボリュームへベイクします。解像度は32³、64³、128³、192³、256³から選べ、初期値は64³です。解像度の変更時にはボリュームを再生成して再ベイクします。発光材質と環境フィルを放射輝度に含め、ベイク後にミップを生成します。Deferred Lightingでは可視画素ごとに5本のコーンを追跡し、拡散照明へ加算します。
+
+ベイク済みボリュームには材質アルベドと法線も保存します。これらは後段のDDGIがボクセルヒット位置で現在のシーン光源を評価するために使います。
+
+## 制約・検証
+
+ボリュームは静的モデルだけを対象とし、動的ライトやシャドウマップはベイクに含めません。薄い面では光漏れが起きる場合があります。解像度・環境フィル・発光倍率・ベイク対象を変えた場合は再ベイクし、SSGIを無効にしてVoxel GI単体の寄与を確認します。
+
+## ソースコード
+
+- [VoxelGI.cpp — ボリューム生成と参照](https://github.com/rumo-dev/AtmosFiore/blob/master/Project/source/Game/Effect/VoxelGI/VoxelGI.cpp)
+- [Voxel GI README — テストシーンと制約](https://github.com/rumo-dev/AtmosFiore/blob/master/Project/source/Game/Effect/VoxelGI/README.md)
+
+<PageEnd />

@@ -1,28 +1,45 @@
 ---
-title: "技術解説：Physical Material（物理ベースマテリアル）"
-description: glTF pbrMetallicRoughnessワークフローに準拠した、Albedo・Metallic・Roughnessによる物理ベースマテリアル表現。
+lastUpdated: 2026-11-12
+title: "技術解説：PBR（物理ベースマテリアル）"
+description: glTFのMetallic-Roughness材質とBRDFの基礎。拡張材質の実装はglTF PBR材質の記事で解説。
 sidebar:
-  label: "Physical Material (PBR)"
+  label: "PBR"
   order: 2
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import ImageGrid from "../../../components/ImageGrid.astro";
-import dummyImg from "../../../assets/dummy00.png";
+
 import TopicSummary from "../../../components/TopicSummary.astro";
 import PageEnd from "../../../components/PageEnd.astro";
 
 <TopicSummary />
 
-大理石の鏡面反射、木材の微細な吸光、遮光カーテンの半透過といった室内特有の質感を描き分けるため、AtmosFioreでは **glTF 2.0 の pbrMetallicRoughness ワークフロー** に準拠した物理ベースマテリアル（PBR）を採用しています。すべてのマテリアルは Base Color・Metallic・Roughness・Normal・Occlusion・Emissive の6要素に統一的に分解され、G-Bufferを介して後段のDeferred Lightingへ受け渡されます。
+## 概要
 
-## PBRの基本概念
+AtmosFioreはglTF 2.0の`pbrMetallicRoughness`を基本ワークフローとして使います。Base Color・Metallic・Roughnessなどの標準材質はDeferredまたはForwardで処理します。実装ではclearcoat、transmission、iridescenceなどの`KHR_materials_*`拡張も扱いますが、拡張材質をすべてG-Bufferへ格納するわけではありません。対応拡張と描画パスの詳細は[glTF PBR材質の記事](./gltf-pbr/)を参照してください。
 
-<ImageGrid images={[dummyImg.src, dummyImg.src, dummyImg.src]} />
+## 処理フロー図
+
+```mermaid
+flowchart LR
+  A["glTF 材質から色・金属度・粗さを取得"]
+  A --> B["テクスチャと法線を適用"]
+  B --> C["G-Buffer または Forward パスへ出力"]
+  C --> D["照明計算で反射色を合成"]
+```
+
+
+## 設計判断・処理の流れ
+
+材質を金属度と粗さなどの共通パラメータで表し、照明の種類が変わっても同じ材質情報を使います。
+
+## 実装のポイント
+
+### 基本的な考え方
 
 物理ベースレンダリングは、光の反射をエネルギー保存則に基づいて計算する手法です。AtmosFioreでは、金属か非金属かを1つのMetallicパラメータで滑らかに補間する **Metallic-Roughnessワークフロー** を採用し、アーティストが直感的にパラメータ調整できるようにしています。
 
-### マテリアルパラメータ構造（glTF準拠）
+#### マテリアルパラメータ構造（glTF準拠）
 
 ```cpp
 // https://www.khronos.org/registry/glTF/specs/2.0/glTF-2.0.html#reference-material-pbrmetallicroughness
@@ -51,7 +68,7 @@ struct material_constants
 StructuredBuffer<material_constants> materials : register(t0);
 ```
 
-### パラメータの物理的意味
+#### パラメータの物理的意味
 
 | パラメータ | 意味                                     | 表現できるもの                          |
 | ---------- | ---------------------------------------- | --------------------------------------- |
@@ -62,7 +79,7 @@ StructuredBuffer<material_constants> materials : register(t0);
 | Occlusion  | 環境光の遮蔽度                           | 隙間・溝の陰影                          |
 | Emissive   | 自己発光色                               | ランプの発光部分                        |
 
-## HLSL実装：BRDFの物理パラメータへの変換
+### HLSL の実装：BRDFの物理パラメータへの変換
 
 Metallic-Roughnessワークフローの核心は、Base ColorとMetallicから鏡面反射率（F0）と拡散反射色を導出する部分です。
 
@@ -100,19 +117,19 @@ float3 brdf_lambertian(float3 f0, float3 f90, float3 diffuse_color, float VoH)
 }
 ```
 
-## 処理の詳細
+### 処理の詳細
 
-### 1. Metallic-Roughnessによる単一ワークフロー
+#### Metallic-Roughnessによる単一ワークフロー
 
 Specular-Glossinessなど他のワークフローと異なり、マテリアルの型（金属/非金属）と粗さを2枚のテクスチャ（Base Color + ORM）だけで表現できるため、テクスチャ容量とシェーダー分岐の両方を削減できます。
 
-### 2. Roughnessのリマッピング
+#### Roughnessのリマッピング
 
 知覚的に線形なRoughnessパラメータ（アーティストが調整する値）をそのままGGX分布関数に渡すとハイライトが不自然に鋭くなるため、`alpha_roughness = roughness * roughness` で実効ラフネスに変換してから使用します。
 
-### 3. G-Bufferへの受け渡し
+#### G-Bufferへの受け渡し
 
-ジオメトリパスで確定したBase Color・Metallic・Roughness・Normal・Occlusion・Emissiveは、[G-Buffer](./gbuffer/)の4枚のレンダーターゲットにパッキングされ、[Deferred Lighting](./deferred-lighting/)パスと[IBL](./ibl/)の両方から共通のパラメータとして参照されます。
+Deferred対象の基本材質情報は[ G-Buffer](./gbuffer/)へ格納し、[Deferred Lighting](./deferred-lighting/)と[IBL](./ibl/)で参照します。透過や拡張材質の追加パラメータはForward PBR側で評価するものがあります。
 
 <Aside type="note">
   BRDFの具体的な数式（Fresnel-Schlick近似・Smith Joint
@@ -120,8 +137,16 @@ Specular-Glossinessなど他のワークフローと異なり、マテリアル�
   LightingおよびIBLの記事で解説しています。
 </Aside>
 
+## 制約・検証
+
 <Aside type="caution">
-  非金属のF0を固定値0.04で近似しているため、水晶や宝石のような高屈折率の誘電体は正確に再現できません。特殊素材が必要な場合はマテリアルごとにF0をオーバーライドする拡張が必要です。
+  glTF仕様に存在する全拡張が実装済みという意味ではありません。また、screen-space transmissionは画面に存在しない背景を屈折できません。対応範囲と近似の限界は[glTF PBR材質の記事](./gltf-pbr/)にまとめています。
 </Aside>
+
+## ソースコード
+
+- [bidirectional_reflectance_distribution_function.hlsli — 実装を読む](https://github.com/rumo-dev/AtmosFiore/blob/master/Project/source/Engine/Graphics/Shader/bidirectional_reflectance_distribution_function.hlsli)
+
+公開版と開発中のローカル版では、更新時点が異なる場合があります。
 
 <PageEnd />

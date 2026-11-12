@@ -1,5 +1,6 @@
 ---
-title: "技術解説：IBL（Image-Based Lighting）"
+lastUpdated: 2026-11-11
+title: "技術解説：IBL（環境マップ照明）"
 description: HDR環境マップ・拡散IEM・スペキュラPMREM・BRDF LUTの4テクスチャによる物理ベース環境光のシミュレーション。
 sidebar:
   label: "IBL"
@@ -7,30 +8,34 @@ sidebar:
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import ImgComparison from "../../../components/ImgComparison.astro";
-import dummyImg from "../../../assets/dummy00.png";
-import houstonImg from "../../../assets/dummy01.png";
+import FeatureMedia from "../../../components/FeatureMedia.astro";
 import TopicSummary from "../../../components/TopicSummary.astro";
 import PageEnd from "../../../components/PageEnd.astro";
 
 <TopicSummary />
 
-窓から差し込む環境光のバウンスを物理的に正しく表現するため、AtmosFioreでは **IBL（Image-Based Lighting）** を実装しています。HDR環境マップから事前計算した拡散IEM（Irradiance Environment Map）とスペキュラPMREM（Prefiltered Mipmapped Radiance Environment Map）、BRDF LUTの4テクスチャを用い、Split-Sum近似によってリアルタイムに環境光を積分します。
+## 概要
 
-## IBLの基本概念
+環境マップから拡散・鏡面の照明を近似するため、AtmosFioreでは **IBL（Image-Based Lighting）** を実装しています。HDR環境マップから事前計算した拡散IEM（Irradiance Environment Map）とスペキュラPMREM（Prefiltered Mipmapped Radiance Environment Map）、BRDF LUTの4テクスチャを用い、Split-Sum近似によってリアルタイムに環境光を積分します。
 
-IBLの有無をスライダーで比較できます。
+環境マップは読み込み済みのDDSを利用します。シーン内の遮蔽や多重バウンスを直接計算する手法ではありません。
 
-<ImgComparison
-  leftImage={dummyImg.src}
-  rightImage={houstonImg.src}
-  altLeft="IBLなし"
-  altRight="IBLあり"
-/>
+## 効果比較スライダー
+
+<FeatureMedia title="環境光による材質の見え方" beforeImage="/media/atmosfiore/captures/ibl_off.png" afterImage="/media/atmosfiore/captures/ibl_on.png" beforeLabel="IBL OFF" afterLabel="IBL ON" caption="同じテストシーンの撮影画像です。環境光による床・球の明るさと反射の変化を比較できます。" />
+
+## 設計判断・処理の流れ
+
+拡散と鏡面の環境光を事前計算したテクスチャから求め、実行時の照明計算で利用します。
+
+## 実装のポイント
+
+### 基本的な考え方
+
 
 直接光源（Directional/Point/Spot/Area Light）だけでは、周囲環境からの間接的な光のバウンス（アンビエント項）を表現できません。IBLは、周囲環境をキャプチャしたHDR画像を「無数の点光源の集合」とみなし、その積分をあらかじめオフラインで計算しておくことでリアルタイムに近似する手法です。
 
-### 4種類のIBLテクスチャ
+#### 4種類のIBLテクスチャ
 
 ```cpp
 enum TextureType {
@@ -49,7 +54,7 @@ enum TextureType {
 | Specular PMREM | Roughnessごとにミップレベルへ事前ブラーした鏡面環境マップ | 鏡面反射（GGX）成分                  |
 | BRDF LUT (GGX) | NoVとRoughnessを軸にしたフレネル・幾何減衰の積分結果      | Split-Sum近似の第2項                 |
 
-## C++実装：IBLテクスチャの管理
+### C++ の実装：IBLテクスチャの管理
 
 ```cpp
 /**
@@ -84,7 +89,7 @@ void IBL::Bind(ID3D11DeviceContext* context)
 }
 ```
 
-## HLSL実装：Split-Sum近似によるIBL積分
+### HLSL の実装：Split-Sum近似によるIBL積分
 
 Karisが提唱したSplit-Sum近似では、本来1回のモンテカルロ積分で解くべき鏡面反射積分を「事前フィルタ済み環境マップのサンプル」と「BRDF LUTのサンプル」の2項の積に分解します。
 
@@ -105,6 +110,9 @@ float4 sample_specular_pmrem(float3 v, float roughness)
     return specular_pmrem.SampleLevel(sampler_states[LINEAR_WRAP], v, lod);
 }
 ```
+
+<details>
+<summary>HLSL のコードを開く</summary>
 
 ```hlsl
 // bidirectional_reflectance_distribution_function.hlsli
@@ -147,17 +155,19 @@ float3 ibl_radiance_lambertian(float3 N, float3 V, float roughness, float3 diffu
 }
 ```
 
-## 処理の詳細
+</details>
 
-### 1. 拡散と鏡面の分離積分
+### 処理の詳細
+
+#### 拡散と鏡面の分離積分
 
 拡散成分は`ibl_radiance_lambertian`でDiffuse IEM（余弦加重済み放射照度）をそのまま用い、鏡面成分は`ibl_radiance_ggx`でSpecular PMREMとBRDF LUTを組み合わせます。両者は[Deferred Lighting](./deferred-lighting/)パスの最後で直接光源の結果に加算されます。
 
-### 2. マルチプルスキャッタリング補償
+#### マルチプルスキャッタリング補償
 
 素朴なSplit-Sum近似は、マイクロファセット間で光が複数回反射するエネルギーを無視するため、特に高Roughness・高Metallicの面が不自然に暗くなります。AtmosFioreはFdez-Agueraのマルチプルスキャッタリング補償項（`fms_ems`）を追加することでこれを補正しています。
 
-### 3. ミップチェインによるRoughness対応
+#### ミップチェインによるRoughness対応
 
 Specular PMREMはミップレベルごとに異なるRoughnessでプレフィルタされたキューブマップとして事前生成されており、実行時は`roughness * (ミップ数-1)`で対応するミップをサンプリングするだけで済みます。
 
@@ -167,8 +177,16 @@ Specular PMREMはミップレベルごとに異なるRoughnessでプレフィル
   Material](./pbr/)の記事を参照してください。
 </Aside>
 
+## 制約・検証
+
 <Aside type="caution">
   IBLは静的にプリベイクされた環境マップに基づくため、時刻に応じて空の色が変化する[Sky](./sky/)や動的なライティング変化とは同期しません。動的IBL更新は今後の拡張課題です。
 </Aside>
+
+## ソースコード
+
+- [ibl.cpp — 実装を読む](https://github.com/rumo-dev/AtmosFiore/blob/master/Project/source/Engine/Graphics/IBL/ibl.cpp)
+
+公開版と開発中のローカル版では、更新時点が異なる場合があります。
 
 <PageEnd />

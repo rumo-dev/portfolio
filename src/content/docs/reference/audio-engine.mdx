@@ -1,5 +1,6 @@
 ---
-title: "技術解説：Audio Engine（オーディオエンジン）"
+lastUpdated: 2026-10-28
+title: "技術解説：Audio Engine（オーディオ）"
 description: XAudio2 / X3DAudioによるBGM・SEの多重再生と、JSON管理のエフェクトチェーン・3D空間オーディオを実装したオーディオシステム。
 sidebar:
   label: "Audio Engine"
@@ -7,19 +8,37 @@ sidebar:
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import ModalVideo from "../../../components/ModalVideo.astro";
 import TopicSummary from "../../../components/TopicSummary.astro";
 import PageEnd from "../../../components/PageEnd.astro";
 
 <TopicSummary />
 
+## 概要
+
 ゲーム内のBGM・SE再生を一元管理するため、AtmosFioreでは **XAudio2 / X3DAudio** ベースの `AudioSystem` を実装しています。音源をキー名でマップ登録して再生する疎結合な設計に加え、リバーブ・エコー・EQなどのエフェクトチェーンをJSONで管理し、imnodesによるノードグラフGUIでリアルタイム編集できるのが特徴です。
 
-## Audio Engineの基本概念
+## 処理フロー図
+
+```mermaid
+flowchart LR
+  A["キーと音源・エフェクトを登録"]
+  A --> B["再生要求からボイスを生成"]
+  B --> C["位置とリスナーから3D音響を更新"]
+  C --> D["エフェクトを通してBGM / SEへ出力"]
+```
+
+
+## 設計判断・処理の流れ
+
+音源の登録、再生中のボイス、エフェクトチェーンを分けて管理します。再生する内容と音の加工を別々に調整できる構成です。
+
+## 実装のポイント
+
+### 基本的な考え方
 
 `AudioSystem`は、レンダリングパイプラインとは独立したシングルトンとして動作し、毎フレームの`Update()`呼び出しで3D音源のパン・減衰・ドップラー効果を再計算します。音源データとエフェクトチェーンは実行時にJSONから読み込まれ、ホットリロードにも対応しています。
 
-### 音源登録とエフェクトチェーンの分離設計
+#### 音源登録とエフェクトチェーンの分離設計
 
 ```cpp
 // 音源登録情報：どのファイルを、どのエフェクトチェーンで鳴らすか
@@ -49,9 +68,12 @@ struct AudioPlayParam
 
 //## 🎥 デモ
 
-//<ModalVideo videoId="tFDzRpk-m1c" title="AtmosFiore preview" />
+//
 
-## C++実装：BGM/SE再生API
+### C++ の実装：BGM/SE再生API
+
+<details>
+<summary>C++ のコードを開く</summary>
 
 ```cpp
 class AudioSystem
@@ -98,9 +120,11 @@ private:
 };
 ```
 
+</details>
+
 BGM/SEはそれぞれ専用のサブミックスボイス（`m_pBGMSubmix` / `m_pSESubmix`）に出力されるため、`SetBGMMasterVolume()` / `SetSEMasterVolume()` でカテゴリごとに一括音量調整できます。
 
-## C++実装：X3DAudioによる3D空間定位
+### C++ の実装：X3DAudioによる3D空間定位
 
 ```cpp
 void AudioSystem::Update3DAudio(int /*voiceId*/, PlayingVoice& voice)
@@ -135,7 +159,7 @@ void AudioSystem::Update3DAudio(int /*voiceId*/, PlayingVoice& voice)
 }
 ```
 
-## エフェクトチェーン（JSON管理）
+### エフェクトチェーン（JSON管理）
 
 各音源には、リバーブ・エコー・EQ・フィルタなどを直列に接続した「エフェクトチェーン」を割り当てられます。チェーンの構成はJSONで永続化され、imnodesのノードグラフエディタから視覚的に編集できます。
 
@@ -175,17 +199,17 @@ enum class AudioEffectType
 };
 ```
 
-## 処理の詳細
+### 処理の詳細
 
-### 1. BGM/SEの多重再生とボイス管理
+#### BGM/SEの多重再生とボイス管理
 
 `m_voices`は再生中のボイスをID付きマップで一元管理し、`CollectStoppedVoices()`が毎フレーム再生終了ボイスを自動回収します。これによりSEの同時多重再生数がXAudio2の上限（`maxVoices`）を超えないよう制御されます。
 
-### 2. XAPOエフェクトチェーンの動的適用
+#### XAPOエフェクトチェーンの動的適用
 
 リバーブ・エコー・EQはWindows標準のXAPO（Reverb/Echo/FXEQ）として`CreateSourceVoice()`時にチェーン順で適用され、ローパス/ハイパスフィルタはXAudio2のビルトインフィルタ（`SetFilterParameters`）で実現しています。
 
-### 3. imnodesによるノードグラフ編集
+#### imnodesによるノードグラフ編集
 
 `DrawEffectGraphEditor()`はImGui拡張のimnodesを用いて、エフェクトチェーンをノードとリンクのグラフとして可視化・編集します。編集結果はそのままJSONへシリアライズされ、次回起動時に復元されます。
 
@@ -193,8 +217,16 @@ enum class AudioEffectType
   エフェクトチェーンとノードグラフGUIはレンダリングパイプラインとは独立したサブシステムですが、Post_Process_Managerと同様に「JSON管理 + GUIによるリアルタイム編集」という設計思想を共有しています。
 </Aside>
 
+## 制約・検証
+
 <Aside type="caution">
   X3DAudioの計算はリスナー・エミッタの位置更新に依存するため、`SetListenerPosition()` / `SetListenerOrientation()`をカメラ更新と同じフレームで呼び出さないと定位がずれる点に注意が必要です。
 </Aside>
+
+## ソースコード
+
+- [AudioSystem.cpp — 実装を読む](https://github.com/rumo-dev/AtmosFiore/blob/master/Project/source/Engine/Audio/AudioSystem.cpp)
+
+公開版と開発中のローカル版では、更新時点が異なる場合があります。
 
 <PageEnd />

@@ -375,3 +375,137 @@ html[data-page-transition='zoom']::view-transition-new(root) {
     break-inside: avoid;
   }
 }
+
+/* 読み進めやすさ: 行長・見出し・コード・メディアの見え方を統一 */
+.sl-markdown-content {
+  font-size: 1rem;
+  line-height: 1.85;
+}
+
+.sl-markdown-content > p,
+.sl-markdown-content > ul,
+.sl-markdown-content > ol,
+.sl-markdown-content > blockquote {
+  max-width: 74ch;
+}
+
+.sl-markdown-content h2:not(:where(.not-content *)) {
+  margin-top: 2.6rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.45rem;
+  font-size: clamp(1.35rem, 2.2vw, 1.55rem);
+  line-height: 1.45;
+}
+
+.sl-markdown-content h2:not(:where(.not-content *))::before {
+  width: 0.22em;
+  height: 0.8em;
+  margin-right: 0.45em;
+}
+
+.sl-markdown-content h3:not(:where(.not-content *)) {
+  margin-top: 1.8rem;
+  margin-bottom: 0.65rem;
+  font-size: 1.14rem;
+  line-height: 1.5;
+}
+
+.sl-markdown-content p:not(:where(.not-content *)) {
+  margin-top: 0.85em;
+  margin-bottom: 0.85em;
+}
+
+.sl-markdown-content li + li {
+  margin-top: 0.25rem;
+}
+
+.sl-markdown-content table {
+  border-radius: 10px;
+  font-size: 0.92rem;
+  line-height: 1.65;
+}
+
+.sl-markdown-content th,
+.sl-markdown-content td {
+  min-width: 8rem;
+  padding: 0.75rem 0.9rem !important;
+  vertical-align: top;
+}
+
+.sl-markdown-content pre:not(.mermaid) {
+  max-width: 100%;
+  border-radius: 10px;
+}
+
+.sl-markdown-content pre.mermaid {
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 1rem;
+  border: 1px solid var(--sl-color-hairline) !important;
+  border-radius: 12px;
+  background: var(--sl-color-bg-card) !important;
+  text-align: center;
+}
+
+.sl-markdown-content pre.mermaid:not([data-processed]) {
+  min-height: 8rem;
+  color: transparent;
+  font-size: 0;
+  position: relative;
+}
+
+.sl-markdown-content pre.mermaid:not([data-processed])::after {
+  content: "図を読み込み中…";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--sl-color-text-muted);
+  font-size: 0.85rem;
+}
+
+.sl-markdown-content pre.mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.feature-media,
+.demo-video {
+  max-width: 58rem;
+  margin-inline: auto;
+}
+
+.feature-media {
+  padding: clamp(0.75rem, 2vw, 1.1rem) !important;
+}
+
+.feature-media figcaption,
+.demo-video figcaption {
+  max-width: 74ch;
+  line-height: 1.7;
+}
+
+.comparison img-comparison-slider {
+  min-height: 12rem;
+  background: var(--sl-color-bg);
+}
+
+@media (max-width: 640px) {
+  .sl-markdown-content {
+    font-size: 0.98rem;
+    line-height: 1.8;
+  }
+
+  .sl-markdown-content h2:not(:where(.not-content *)) {
+    margin-top: 2.2rem;
+  }
+
+  .sl-markdown-content th,
+  .sl-markdown-content td {
+    min-width: 9rem;
+  }
+
+  .topic-summary {
+    padding: 1rem;
+  }
+}

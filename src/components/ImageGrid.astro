@@ -6,19 +6,19 @@ interface Props {
 
 const { images: allImages, isComparison = false } = Astro.props;
 // 仮画像（dummy*）はそのまま公開しない。実画像に差し替えるまでは「準備中」表示にする
-const images = allImages.filter((src) => !/dummy/i.test(src));
-const isPlaceholder = images.length === 0;
+const images = allImages.map((src) => /dummy/i.test(src) ? import.meta.env.BASE_URL.replace(/\/$/, "") + "/media/placeholder-before.svg" : src);
+const isPlaceholder = allImages.some((src) => /dummy/i.test(src));
 ---
 
 {
   isPlaceholder && (
     <div class="img-pending not-content" role="note">
-      <strong>デモ画像は準備中です</strong>
-      <span>実装コードと解説は下記をご覧ください。</span>
+      <strong>DUMMY IMAGE / 仮画像</strong>
+      <span>実機キャプチャへ差し替え予定です。</span>
     </div>
   )
 }
-<div class={`image-container ${isComparison ? 'grid-2' : 'grid-1'}`} hidden={isPlaceholder}>
+<div class={`image-container ${isComparison ? 'grid-2' : 'grid-1'}`}>
   {
     images.map((src) => (
       <div class="image-wrapper">

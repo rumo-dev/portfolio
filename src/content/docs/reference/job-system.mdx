@@ -1,0 +1,63 @@
+---
+lastUpdated: 2026-10-28
+title: "技術解説：Job System（CPU処理の並列化）"
+description: "再利用するワーカープールでモデルのアニメーション更新を分担。"
+sidebar:
+  label: "Job System"
+---
+
+import TopicSummary from "../../../components/TopicSummary.astro";
+import PageEnd from "../../../components/PageEnd.astro";
+
+<TopicSummary />
+
+## 概要
+
+モデルが増えたときのCPU側の更新を分担するため、小さなワーカープールを実装しました。
+
+## 処理フロー図
+
+```mermaid
+flowchart LR
+  A["アニメーション更新の仕事を集める"]
+  A --> B["少数の仕事は逐次実行"]
+  B --> C["それ以外はワーカーへ分配"]
+  C --> D["完了を待って更新結果を反映"]
+```
+
+## 設計判断・処理の流れ
+
+少数の仕事は逐次処理し、仕事数が閾値以上の場合は再利用するワーカープールへ分担します。GPU操作は描画スレッドに残します。
+
+```text
+仕事数と閾値 → 逐次処理またはワーカーへ投入 → アトミックなインデックス取得 → 完了待ち
+```
+
+## 実装のポイント
+
+parallel_forは仕事数が閾値未満なら呼び出し元で実行します。並列時はatomicなnext_indexで仕事を取得し、残数とcondition_variableで完了を待ちます。Model_Managerではアニメーション更新の仕事数が4以上の場合に並列経路へ進みます。
+
+### 現行コードの抜粋
+
+```cpp
+    if (count < minimum_parallel_count || workers_.empty())
+    {
+      for (size_t index = 0; index < count; ++index)
+        function(index);
+      return;
+    }
+
+    struct Group
+```
+
+## 制約・検証
+
+対象はCPU処理です。GPUコマンドとリソース生成は描画スレッドへ残します。並列化の効果はモデル数や仕事の粒度に依存し、高速化率は未計測です。
+
+## ソースコード
+
+[job_system.h — 実装を読む](https://github.com/rumo-dev/AtmosFiore/blob/master/Project/source/Engine/System/job_system.h)
+
+公開版と開発中のローカル版では、更新時点が異なる場合があります。
+
+<PageEnd />
