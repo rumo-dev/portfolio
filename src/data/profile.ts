@@ -28,9 +28,9 @@ export const startHere = [
   {
     step: "3",
     time: "約3分",
-    title: "Coin Baller（チーム制作）",
-    desc: "4人開発での担当範囲と、GitHub Flow・性能改善の取り組み。",
-    path: "/guides/coin-baller/",
+    title: "技術解説：モデル・メッシュレットカリング",
+    desc: "モデル境界、メッシュレット、遮蔽クエリを使った描画対象の判定。",
+    path: "/reference/culling/",
   },
 ];
 

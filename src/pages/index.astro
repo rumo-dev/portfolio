@@ -68,7 +68,7 @@ const topics = docs
   });
 
 const description =
-  `DirectX 11 / C++ / HLSL で描画エンジンを自作する${focus.role}志望・丸毛温仁のポートフォリオ。PBR・ディファードライティング・ポストプロセスの実装解説${topics.length}本と、個人制作・チーム制作3作品を掲載。`;
+  `DirectX 11 / C++ / HLSL で描画エンジンを自作する${focus.role}志望・丸毛温仁のポートフォリオ。PBR・ディファードライティング・ポストプロセスの実装解説${topics.length}本と、個人制作AtmosFioreを掲載。`;
 
 // ---------- 作品データ ----------
 const featured = {
@@ -86,29 +86,6 @@ const featured = {
   href: url("/guides/atmosfiore/"),
   github: "https://github.com/rumo-dev/AtmosFiore",
 };
-
-const works = [
-  {
-    title: "Coin Baller",
-    kind: "チーム制作 / 3D Roguelike",
-    lead: "スマートボールとピンボールを融合した3Dローグライクゲーム。",
-    role: "シェーダープログラマー（ポストエフェクトなど）",
-    meta: "38日間 ・ プログラマー4人",
-    tags: ["DirectX 11", "C++", "GitHub Flow"],
-    thumb: "https://img.youtube.com/vi/eAyFPevaKRA/hqdefault.jpg",
-    href: url("/guides/coin-baller/"),
-  },
-  {
-    title: "FIGAVOID",
-    kind: "チーム制作 / 2D Roguelike",
-    lead: "敵にギリギリまで近づくスリルと、少ない爆弾で効率よく倒す戦略性を両立した2Dローグライク。",
-    role: "メインプログラマー（Player / Enemy / タイトル・リザルト）",
-    meta: "3週間 ・ プログラマー3人",
-    tags: ["DirectX 11", "C++", "GitHub Flow"],
-    thumb: "https://img.youtube.com/vi/RrdWjpoNi-s/hqdefault.jpg",
-    href: url("/guides/figavoid/"),
-  },
-];
 
 // ---------- 強み ----------
 const t = (slug: string) => topics.find((x) => x.href.endsWith(`/${slug}/`));
@@ -257,8 +234,8 @@ const skillsExp = [
             <span>自作エンジンを継続開発中</span>
           </div>
           <div>
-            <strong>3作品</strong>
-            <span>個人制作1 ・ チーム制作2</span>
+            <strong>個人制作</strong>
+            <span>AtmosFioreを継続開発中</span>
           </div>
         </div>
       </section>
@@ -323,27 +300,6 @@ const skillsExp = [
             </div>
           </article>
 
-          <div class="work-grid">
-            {
-              works.map((w) => (
-                <article class="work">
-                  <a class="work-thumb" href={w.href} aria-label={`${w.title} の詳細を見る`}>
-                    <img src={w.thumb} alt={`${w.title} のプレイ映像サムネイル`} loading="lazy" />
-                  </a>
-                  <div class="work-body">
-                    <p class="lp-kicker">{w.kind}</p>
-                    <h3><a href={w.href}>{w.title}</a></h3>
-                    <p>{w.lead}</p>
-                    <p class="lp-meta"><b>担当</b> {w.role}</p>
-                    <p class="lp-meta">{w.meta}</p>
-                    <div class="chips">
-                      {w.tags.map((tag) => <span>{tag}</span>)}
-                    </div>
-                  </div>
-                </article>
-              ))
-            }
-          </div>
         </div>
       </section>
 
@@ -369,14 +325,6 @@ const skillsExp = [
                 </div>
               ))
             }
-            <div class="strength">
-              <h3>チーム開発・協働</h3>
-              <p>GitHub Flow と PR レビューで main を常に動く状態に保ち、データ駆動設計でプログラマー以外も調整しやすい基盤を設計。</p>
-              <ul>
-                <li><a href={url("/guides/coin-baller/")}>Coin Baller →</a></li>
-                <li><a href={url("/guides/figavoid/")}>FIGAVOID →</a></li>
-              </ul>
-            </div>
           </div>
 
           <h3 class="topics-title">技術解説 全{topics.length}本</h3>
